@@ -1,16 +1,16 @@
 use std::collections::HashMap;
 
 use cdc_avro::ChangeEvent;
+use cdc_sink::KafkaSink;
 use feldera_rest_api::Client;
-use rdkafka::{
-    ClientConfig, ClientContext,
-    config::RDKafkaLogLevel,
-    consumer::{BaseConsumer, ConsumerContext, Rebalance, StreamConsumer},
-    types::RDKafka,
-};
+
 use serde::Serialize;
 
-pub enum Error {}
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("A")]
+    A,
+}
 
 #[derive(serde::Serialize)]
 pub struct JsonRow {}
@@ -95,6 +95,19 @@ impl FelderaConnector {
         Ok(())
     }
 }
+impl KafkaSink for FelderaConnector {
+    async fn on_event(&self, event: ChangeEvent) -> Result<(), ()> {
+        self.insert_batch(&event.table.clone(), vec![event])
+            .await
+            .unwrap();
+
+        Ok(())
+    }
+}
 
 #[tokio::main]
-async fn main() {}
+async fn main() {
+    // TODO: Load config
+
+    cdc_sink::consume_from_kafka(&FelderaConnector::new("", String::new())).await;
+}

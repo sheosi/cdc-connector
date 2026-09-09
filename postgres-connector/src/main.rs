@@ -1,19 +1,19 @@
 use cdc_avro::ChangeEvent;
+use cdc_sink::KafkaSink;
 use std::collections::HashMap;
-use tokio_postgres::Statement;
+use std::fmt::Write;
+use tokio_postgres::{Connection, NoTls, Socket, Statement, tls::NoTlsStream};
 
 #[tokio::main]
 async fn main() {
-    let sink = PostgresSink::new();
-    while let Some(event) = cdc_sink::consume_from_kafka().await {
-        if let Err(e) = sink.perform_op(event).await {
-            println!("{:?}", e);
-        }
-    }
+    cdc_sink::consume_from_kafka(&PostgresSink::new().await).await;
 }
+
+pub struct Config {}
 
 pub struct PostgresSink {
     client: tokio_postgres::Client,
+    conn: Connection<Socket, NoTlsStream>,
     pk_cache: HashMap<String, Vec<String>>,
 }
 
@@ -44,9 +44,9 @@ impl InsertStatement {
 
         for i in 0..rows.len() {
             if i < rows.len() - 1 {
-                write!(stmt_str, "${},", i).expect("");
+                write!(&mut stmt_str, "${},", i).expect("");
             } else {
-                write!(stmt_str, "${},", i).expect("");
+                write!(&mut stmt_str, "${},", i).expect("");
             }
         }
 
@@ -80,9 +80,12 @@ impl DeleteStatement {
 }
 
 impl PostgresSink {
-    fn new() -> Self {
+    async fn new() -> Self {
+        let (clt, conn) = tokio_postgres::connect("host=", NoTls).await.unwrap();
+
         Self {
-            client: tokio_postgres::Client,
+            client: clt,
+            conn,
             pk_cache: HashMap::new(),
         }
     }
@@ -93,12 +96,16 @@ impl PostgresSink {
                 let insert_stmt =
                     InsertStatement::new(&self.client, "users", &["id", "name", "email"]).await;
 
-                self.client
+                if let Err(e) = self
+                    .client
                     .execute(
                         &insert_stmt.stmt,
                         &[&row["id"], &row["name"], &row["email"]],
                     )
-                    .await;
+                    .await
+                {
+                    eprintln!("{:?}", e);
+                }
             }
             cdc_avro::Op::Update { key, row } => {
                 let update_stmt = self
@@ -107,16 +114,30 @@ impl PostgresSink {
                     .await
                     .unwrap();
 
-                self.client
+                if let Err(e) = self
+                    .client
                     .execute(&update_stmt, &[&row["id"], &row["name"], &row["user"]])
-                    .await;
+                    .await
+                {
+                    eprintln!("{:?}", e);
+                }
             }
             cdc_avro::Op::Delete { key } => {
                 let delete_stmt = DeleteStatement::new(&self.client, "users").await;
 
-                self.client.execute(&delete_stmt.stmt, &[&key]).await;
+                if let Err(e) = self.client.execute(&delete_stmt.stmt, &[&key]).await {
+                    eprintln!("{:?}", e);
+                }
             }
         }
+
+        Ok(())
+    }
+}
+
+impl KafkaSink for PostgresSink {
+    async fn on_event(&self, event: ChangeEvent) -> Result<(), ()> {
+        self.perform_op(event).await.expect("");
 
         Ok(())
     }

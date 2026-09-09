@@ -1,18 +1,23 @@
 use cdc_avro::ChangeEvent;
+use futures_util::stream::TryStreamExt;
 use rdkafka::{
-    ClientConfig,
+    ClientConfig, Message,
     config::RDKafkaLogLevel,
     consumer::{Consumer, StreamConsumer},
 };
 
 #[derive(Default)]
-struct KafkaConfig {
+pub struct KafkaConfig {
     pub kafka_brokers: String,
     pub kafka_topic: String,
     pub kafka_group_id: String,
 }
 
-pub async fn consume_from_kafka() -> Option<ChangeEvent> {
+pub trait KafkaSink {
+    fn on_event(&self, event: ChangeEvent) -> impl std::future::Future<Output = Result<(), ()>>;
+}
+
+pub async fn consume_from_kafka<S: KafkaSink>(sink: &S) {
     let own_config = KafkaConfig::default();
 
     let log_level = if cfg!(debug_assertions) {
@@ -36,9 +41,16 @@ pub async fn consume_from_kafka() -> Option<ChangeEvent> {
 
     let stream_procesor = consumer
         .stream()
-        .try_for_each(|borrowerd_message| async move {});
+        .try_for_each(|borrowed_message| async move {
+            if let Some(view) = borrowed_message.payload_view::<[u8]>() {
+                let event = ChangeEvent::from_avro(view.expect(""));
+                if let Err(e) = sink.on_event(event).await {
+                    eprintln!("{:?}", e);
+                }
+            }
 
-    // TODO: This
+            Ok(())
+        });
 
-    None
+    stream_procesor.await.expect("Failed");
 }

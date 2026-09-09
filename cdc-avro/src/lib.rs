@@ -1,9 +1,6 @@
 use std::{collections::HashMap, sync::LazyLock};
 
-use apache_avro::{
-    Reader, Writer, from_value,
-    types::{Record, Value},
-};
+use apache_avro::{Reader, from_value};
 
 use apache_avro::{AvroSchema, Schema};
 use serde::{Deserialize, Serialize};
@@ -21,19 +18,24 @@ pub enum Op {
     },
 }
 
-impl Op {
-    pub fn from_avro(bytes: Vec<u8>) -> Self {
-        let schema = &OP_SCHEMA;
+#[derive(AvroSchema, Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct ChangeEvent {
+    pub op: Op,
+    pub table: String,
+}
+
+impl ChangeEvent {
+    pub fn from_avro(bytes: &[u8]) -> Self {
         let reader = Reader::new(std::io::Cursor::new(bytes)).unwrap();
         for result in reader {
-            let new_op: Op = from_value(&result.unwrap()).unwrap();
-            return new_op;
+            let new_event: ChangeEvent = from_value(&result.unwrap()).unwrap();
+            return new_event;
         }
         panic!("Something should be returned");
     }
 
     pub fn into_avro(&self) -> Vec<u8> {
-        let schema = &OP_SCHEMA;
+        let schema = &CHANGE_EVENT_SCHEMA;
         let mut writer = apache_avro::Writer::new(schema, Vec::new()).unwrap();
 
         writer.append_ser(self).unwrap();
@@ -43,13 +45,7 @@ impl Op {
     }
 }
 
-#[derive(AvroSchema, Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub struct ChangeEvent {
-    pub op: Op,
-    pub table: String,
-}
-
-const OP_SCHEMA: LazyLock<Schema> = LazyLock::new(|| Op::get_schema());
+const CHANGE_EVENT_SCHEMA: LazyLock<Schema> = LazyLock::new(|| ChangeEvent::get_schema());
 
 #[cfg(test)]
 mod tests {
@@ -67,17 +63,5 @@ mod tests {
         let back = Op::from_avro(bytes);
 
         assert_eq!(op, back);
-
-        /*let msg = ChangeEvent {
-            op: Op::Insert {
-                row: maplit::hashmap! {"Test".to_string()=> "B".to_string()},
-            },
-            table: "users".into(),
-        };*/
-
-        //assert_eq!(record, back_again);
-        //let bytes = (&msg);
-        //let back: ChangeEvent = decode(&bytes).unwrap();
-        // assert_eq!(msg, back);
     }
 }
