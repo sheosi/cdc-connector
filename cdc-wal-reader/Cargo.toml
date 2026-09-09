@@ -1,0 +1,14 @@
+[package]
+name = "cdc-wal-reader"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow = "1.0.104"
+apache-avro = "0.22.0"
+bytes = "1.12.1"
+pgwire-replication = "0.4.0"
+serde = { version = "1.0.229", features = ["derive"] }
+tokio = {version = "1.53.1", features = ["full"]}
+cdc-avro = {path = "../cdc-avro"}

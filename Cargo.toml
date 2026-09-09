@@ -1,0 +1,17 @@
+[workspace]
+members = [
+    "cdc-avro",
+    "cdc-producer",
+    "cdc-sink",
+    "cdc-wal-reader",
+    "feldera-connector"
+, "postgres-connector"]
+
+
+resolver = "3"
+
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"

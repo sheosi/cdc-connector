@@ -1,0 +1,11 @@
+[package]
+name = "cdc-avro"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+apache-avro = {version = "0.22.0", features = ["derive"]}
+maplit = "1.0.2"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"

@@ -1,0 +1,16 @@
+[package]
+name = "feldera-connector"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+feldera-rest-api = "0.346.0"
+reqwest = "0.12.28"
+cdc-avro = {path = "../cdc-avro"}
+feldera-types = "0.346.0"
+serde_json = "1.0.151"
+serde = "1.0.229"
+rdkafka = {version = "0.39.0", features = ["cmake-build"]}
+tokio = { version = "1.53.1", features = ["full"] }
+cdc-sink = {path = "../cdc-sink"}
