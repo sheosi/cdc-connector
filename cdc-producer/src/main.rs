@@ -1,32 +1,40 @@
 use anyhow::Result;
 
-use cdc_wal_reader::{Producer, ProducerError, ProducerRecord, ReplicationConfig};
+use cdc_avro::ChangeEvent;
+use cdc_wal_reader::{Producer, ProducerError, ReplicationConfig};
 use rdkafka::ClientConfig;
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use rdkafka::util::Timeout;
 use serde::Deserialize;
 
 pub struct KafkaProducer {
+    topic: String,
     inner: FutureProducer,
+    key: String,
 }
 
 impl KafkaProducer {
-    pub fn new(brokers: &str) -> Result<Self, ()> {
+    fn new(config: &KafkaConfig) -> Result<Self, ()> {
         let producer: FutureProducer = ClientConfig::new()
-            .set("bootstrap.servers", brokers)
+            .set("bootstrap.servers", config.brokers.clone())
             .set("message.timeout.ms", "5000")
             .create()
             .unwrap();
 
-        Ok(Self { inner: producer })
+        Ok(Self {
+            inner: producer,
+            topic: config.topic.clone(),
+            key: config.key.clone(),
+        })
     }
 }
 
 impl Producer for KafkaProducer {
-    async fn send(&self, record: ProducerRecord) -> Result<(), ProducerError> {
-        let future_record = FutureRecord::to(&record.topic)
-            .key(&record.key)
-            .payload(&record.payload);
+    async fn send(&self, event: ChangeEvent) -> Result<(), ProducerError> {
+        let payload = event.into_avro();
+        let future_record = FutureRecord::to(&self.topic)
+            .key(&self.key)
+            .payload(&payload);
 
         self.inner
             .send(
@@ -42,10 +50,23 @@ impl Producer for KafkaProducer {
 
 #[derive(Deserialize)]
 struct ProducerConfig {
+    postgres: PostgresConfig,
+    kafka: KafkaConfig,
+}
+
+#[derive(Deserialize)]
+struct PostgresConfig {
     host: String,
     user: String,
     password: String,
     slot_name: String,
+}
+
+#[derive(Deserialize)]
+struct KafkaConfig {
+    brokers: String,
+    topic: String,
+    key: String,
 }
 
 #[tokio::main]
@@ -58,17 +79,17 @@ async fn main() -> Result<()> {
         .unwrap();
 
     let config = ReplicationConfig::new(
-        own_config.host,
-        own_config.user,
-        own_config.password,  // host, user, password
-        "cdc",                // dbname
-        own_config.slot_name, // slot name
-        "cdc_pub",            // publication
+        own_config.postgres.host,
+        own_config.postgres.user,
+        own_config.postgres.password,  // host, user, password
+        "cdc",                         // dbname
+        own_config.postgres.slot_name, // slot name
+        "cdc_pub",                     // publication
     )
     .with_port(5400);
 
     // TODO: Give proper brokers
-    cdc_wal_reader::start_wal_input(config, KafkaProducer::new("").unwrap())
+    cdc_wal_reader::start_wal_input(config, KafkaProducer::new(&own_config.kafka).unwrap())
         .await
         .unwrap();
     Ok(())
