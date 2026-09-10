@@ -7,7 +7,7 @@ use crate::decoder::{
     relation::Relation,
 };
 
-pub async fn parse(data: &[u8], relation_map: &HashMap<u32, Relation>) -> ChangeEvent {
+pub async fn parse(data: bytes::Bytes, relation_map: &HashMap<u32, Relation>) -> ChangeEvent {
     let id = u32::from_be_bytes(data[0..4].try_into().unwrap());
     let relation_oid = u32::from_be_bytes(data[4..8].try_into().unwrap());
 
@@ -16,7 +16,7 @@ pub async fn parse(data: &[u8], relation_map: &HashMap<u32, Relation>) -> Change
     let old_data = get_old_tuple_data(&data[9..]);
 
     // TODO: Were does old end?
-    let new_data = get_new_tuple_data(data).to_row(&relation);
+    let new_data = get_new_tuple_data(&data).to_row(&relation);
 
     ChangeEvent {
         op: cdc_avro::Op::Update {

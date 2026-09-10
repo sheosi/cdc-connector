@@ -10,3 +10,4 @@ tokio = { version = "1.53.1", features = ["full"] }
 tokio-postgres = "0.7.18"
 cdc-avro = {path = "../cdc-avro"}
 futures-util = "0.3.34"
+serde = { version = "1.0.229", features = ["derive"] }

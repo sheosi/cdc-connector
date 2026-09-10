@@ -11,3 +11,5 @@ thiserror = "2.0.20"
 tokio = {version = "1.53.1", features = ["full"]}
 cdc-avro = {path = "../cdc-avro"}
 cdc-wal-reader = {path="../cdc-wal-reader"}
+config = "0.15.25"
+serde = { version = "1.0.229", features = ["derive"] }

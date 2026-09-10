@@ -1,15 +1,27 @@
 use cdc_avro::ChangeEvent;
-use cdc_sink::KafkaSink;
+use cdc_sink::{KafkaConfig, KafkaSink};
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::fmt::Write;
 use tokio_postgres::{Client, Connection, NoTls, Socket, Statement, tls::NoTlsStream};
+use config::Config;
 
 #[tokio::main]
 async fn main() {
-    cdc_sink::consume_from_kafka(PostgresSink::new().await).await;
+    let config: BridgeConfig = Config::builder()
+        .add_source(config::File::with_name("feldera-connector"))
+        .build()
+        .unwrap()
+        .try_deserialize()
+        .unwrap();
+
+    cdc_sink::consume_from_kafka(config.kafka, PostgresSink::new().await).await;
 }
 
-pub struct Config {}
+#[derive(Deserialize)]
+struct BridgeConfig {
+    kafka: KafkaConfig,
+}
 
 pub struct PostgresSink {
     client: tokio_postgres::Client,

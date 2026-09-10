@@ -10,3 +10,5 @@ tokio = { version = "1.53.1", features = ["full"] }
 tokio-postgres = "0.7.18"
 cdc-avro = {path = "../cdc-avro"}
 cdc-sink = {path = "../cdc-sink"}
+config = "0.15.25"
+serde = { version = "1.0.229", features = ["derive"] }

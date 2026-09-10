@@ -3,16 +3,18 @@ use std::collections::HashMap;
 use pgwire_replication::{ReplicationClient, ReplicationEvent};
 
 pub use pgwire_replication::ReplicationConfig;
+use thiserror::Error;
 
 mod decoder;
 
-type Result<T> = anyhow::Result<T>;
-
-pub async fn start_wal_input<P: Producer>(config: ReplicationConfig, producer: P) -> Result<()> {
-    let mut client = ReplicationClient::connect(config).await?;
+pub async fn start_wal_input<P: Producer>(
+    config: ReplicationConfig,
+    producer: P,
+) -> Result<(), ProducerError> {
+    let mut client = ReplicationClient::connect(config).await.unwrap();
     let mut relation_map = HashMap::new();
 
-    while let Some(ev) = client.recv().await? {
+    while let Some(ev) = client.recv().await.unwrap() {
         match ev {
             ReplicationEvent::XLogData { wal_end, data, .. } => match data[0] {
                 b'R' => {
@@ -28,11 +30,11 @@ pub async fn start_wal_input<P: Producer>(config: ReplicationConfig, producer: P
                     println!("{:?}", insert);
                 }
                 b'D' => {
-                    println!("Remove bytes={:?}", wal_end, &data);
+                    println!("Remove bytes={:?}", &data);
                     let delete = decoder::insert::parse(data, &relation_map);
                 }
                 b'U' => {
-                    println!("Delete bytes={:?", wal_end, &data);
+                    println!("Delete bytes={:?}", &data);
                     let update = decoder::update::parse(data, &relation_map);
                 }
                 _ => {
@@ -49,6 +51,7 @@ pub async fn start_wal_input<P: Producer>(config: ReplicationConfig, producer: P
     Ok(())
 }
 
+#[derive(Debug, Error)]
 pub enum ProducerError {}
 
 pub trait Producer: Send {

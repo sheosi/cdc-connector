@@ -5,12 +5,13 @@ use rdkafka::{
     config::RDKafkaLogLevel,
     consumer::{Consumer, StreamConsumer},
 };
+use serde::Deserialize;
 
-#[derive(Default)]
+#[derive(Deserialize, Default)]
 pub struct KafkaConfig {
-    pub kafka_brokers: String,
-    pub kafka_topic: String,
-    pub kafka_group_id: String,
+    pub brokers: String,
+    pub topic: String,
+    pub group_id: String,
 }
 
 pub trait KafkaSink {
@@ -18,9 +19,7 @@ pub trait KafkaSink {
     -> impl std::future::Future<Output = Result<(), ()>>;
 }
 
-pub async fn consume_from_kafka<S: KafkaSink>(mut sink: S) {
-    let own_config = KafkaConfig::default();
-
+pub async fn consume_from_kafka<S: KafkaSink>(own_config: KafkaConfig, mut sink: S) {
     let log_level = if cfg!(debug_assertions) {
         RDKafkaLogLevel::Debug
     } else {
@@ -28,8 +27,8 @@ pub async fn consume_from_kafka<S: KafkaSink>(mut sink: S) {
     };
 
     let consumer: StreamConsumer = ClientConfig::new()
-        .set("group.id", own_config.kafka_group_id)
-        .set("boostrap.servers", own_config.kafka_brokers)
+        .set("group.id", own_config.group_id)
+        .set("boostrap.servers", own_config.brokers)
         .set("enable.partition.eof", "false")
         .set("session.timeout.ms", "6000")
         .set_log_level(log_level)
@@ -37,7 +36,7 @@ pub async fn consume_from_kafka<S: KafkaSink>(mut sink: S) {
         .expect("Consumer creation failed");
 
     consumer
-        .subscribe(&vec![own_config.kafka_topic.as_str()])
+        .subscribe(&vec![own_config.topic.as_str()])
         .expect("Can't subscribe to specified topics");
 
     let mut stream = consumer.stream();

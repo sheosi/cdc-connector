@@ -1,8 +1,11 @@
 use std::collections::HashMap;
 
 use cdc_avro::ChangeEvent;
+use cdc_sink::KafkaConfig;
 use cdc_sink::KafkaSink;
+use config::Config;
 use feldera_rest_api::Client;
+use serde::Deserialize;
 
 use serde::Serialize;
 
@@ -12,14 +15,9 @@ pub enum Error {
     A,
 }
 
-#[derive(serde::Serialize)]
-pub struct JsonRow {}
-
-#[derive(Default)]
+#[derive(Deserialize, Default)]
 pub struct BridgeConfig {
-    pub kafka_brokers: String,
-    pub kafka_topic: String,
-    pub kafka_group_id: String,
+    pub kafka: KafkaConfig,
     pub feldera_url: String,
     pub feldera_pipeline: String,
 }
@@ -107,7 +105,16 @@ impl KafkaSink for FelderaConnector {
 
 #[tokio::main]
 async fn main() {
-    // TODO: Load config
+    let config: BridgeConfig = Config::builder()
+        .add_source(config::File::with_name("feldera-connector"))
+        .build()
+        .unwrap()
+        .try_deserialize()
+        .unwrap();
 
-    cdc_sink::consume_from_kafka(FelderaConnector::new("", String::new())).await;
+    cdc_sink::consume_from_kafka(
+        config.kafka,
+        FelderaConnector::new(&config.feldera_url, config.feldera_pipeline),
+    )
+    .await;
 }

@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use anyhow::Result;
 
 use cdc_wal_reader::{Producer, ProducerError, ProducerRecord, ReplicationConfig};
@@ -54,7 +52,7 @@ async fn main() -> Result<()> {
     .with_port(5400);
 
     // TODO: Give proper brokers
-    cdc_wal_reader::start_wal_input(config, KafkaProducer::new(""))
+    cdc_wal_reader::start_wal_input(config, KafkaProducer::new("").unwrap())
         .await
         .unwrap();
     Ok(())

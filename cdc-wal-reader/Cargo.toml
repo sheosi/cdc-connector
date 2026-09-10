@@ -12,3 +12,4 @@ pgwire-replication = "0.4.0"
 serde = { version = "1.0.229", features = ["derive"] }
 tokio = {version = "1.53.1", features = ["full"]}
 cdc-avro = {path = "../cdc-avro"}
+thiserror = "2.0.20"
