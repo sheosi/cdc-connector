@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use cdc_avro::ChangeEvent;
 use pgwire_replication::{ReplicationClient, ReplicationEvent};
 
 pub use pgwire_replication::ReplicationConfig;
@@ -28,14 +29,17 @@ pub async fn start_wal_input<P: Producer>(
                     println!("XLogData wal_end={} bytes={:?}", wal_end, &data);
                     let insert = decoder::insert::parse(data, &relation_map);
                     println!("{:?}", insert);
+                    producer.send(insert).await;
                 }
                 b'D' => {
                     println!("Remove bytes={:?}", &data);
-                    let delete = decoder::insert::parse(data, &relation_map);
+                    let delete = decoder::delete::parse(data, &relation_map);
+                    producer.send(delete).await;
                 }
                 b'U' => {
                     println!("Delete bytes={:?}", &data);
                     let update = decoder::update::parse(data, &relation_map);
+                    producer.send(update).await;
                 }
                 _ => {
                     println!("XLogData wal_end={} bytes={:?}", wal_end, data);
@@ -57,13 +61,6 @@ pub enum ProducerError {}
 pub trait Producer: Send {
     fn send(
         &self,
-        record: ProducerRecord,
+        event: ChangeEvent,
     ) -> impl std::future::Future<Output = Result<(), ProducerError>>;
-}
-
-pub struct ProducerRecord {
-    pub topic: String,
-    pub key: Vec<u8>,
-    pub payload: Vec<u8>,
-    pub headers: HashMap<String, Vec<u8>>,
 }

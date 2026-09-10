@@ -5,7 +5,7 @@ use std::ffi::CStr;
 pub struct Relation {
     pub relation_oid: u32,
     namespace: String,
-    relname: String,
+    pub relname: String,
     replica_id: String,
     pub fields: Vec<Field>,
 }

@@ -13,7 +13,7 @@ pub fn parse(data: bytes::Bytes, relation_map: &HashMap<u32, Relation>) -> Chang
 
     ChangeEvent {
         op: cdc_avro::Op::Insert { row },
-        table: "users".to_string(), // TODO! Properly extract table
+        table: relation.relname.clone(),
     }
 }
 
