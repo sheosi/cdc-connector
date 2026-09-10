@@ -96,7 +96,7 @@ impl FelderaConnector {
     }
 }
 impl KafkaSink for FelderaConnector {
-    async fn on_event(&self, event: ChangeEvent) -> Result<(), ()> {
+    async fn on_event(&mut self, event: ChangeEvent) -> Result<(), ()> {
         self.insert_batch(&event.table.clone(), vec![event])
             .await
             .unwrap();
@@ -109,5 +109,5 @@ impl KafkaSink for FelderaConnector {
 async fn main() {
     // TODO: Load config
 
-    cdc_sink::consume_from_kafka(&FelderaConnector::new("", String::new())).await;
+    cdc_sink::consume_from_kafka(FelderaConnector::new("", String::new())).await;
 }

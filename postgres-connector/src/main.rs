@@ -2,11 +2,11 @@ use cdc_avro::ChangeEvent;
 use cdc_sink::KafkaSink;
 use std::collections::HashMap;
 use std::fmt::Write;
-use tokio_postgres::{Connection, NoTls, Socket, Statement, tls::NoTlsStream};
+use tokio_postgres::{Client, Connection, NoTls, Socket, Statement, tls::NoTlsStream};
 
 #[tokio::main]
 async fn main() {
-    cdc_sink::consume_from_kafka(&PostgresSink::new().await).await;
+    cdc_sink::consume_from_kafka(PostgresSink::new().await).await;
 }
 
 pub struct Config {}
@@ -15,8 +15,49 @@ pub struct PostgresSink {
     client: tokio_postgres::Client,
     conn: Connection<Socket, NoTlsStream>,
     pk_cache: HashMap<String, Vec<String>>,
+    insert_stmt_cache: InsertStatementCache,
+    delete_stmt_cache: DeleteStatementCache,
 }
 
+struct InsertStatementCache(HashMap<String, InsertStatement>);
+
+impl InsertStatementCache {
+    fn new() -> Self {
+        Self(HashMap::new())
+    }
+
+    async fn get(&mut self, client: &Client, table: &str, rows: &[&str]) -> InsertStatement {
+        let key = format!("{}{:?}", table, rows);
+
+        use std::collections::hash_map::Entry;
+
+        match self.0.entry(key) {
+            Entry::Occupied(e) => e.get().clone(),
+            Entry::Vacant(e) => e
+                .insert(InsertStatement::new(client, table, rows).await)
+                .clone(),
+        }
+    }
+}
+
+struct DeleteStatementCache(HashMap<String, DeleteStatement>);
+
+impl DeleteStatementCache {
+    fn new() -> Self {
+        Self(HashMap::new())
+    }
+
+    async fn get(&mut self, client: &Client, table: &str) -> DeleteStatement {
+        use std::collections::hash_map::Entry;
+
+        match self.0.entry(table.to_string()) {
+            Entry::Occupied(e) => e.get().clone(),
+            Entry::Vacant(e) => e.insert(DeleteStatement::new(client, table).await).clone(),
+        }
+    }
+}
+
+#[derive(Clone)]
 pub struct InsertStatement {
     stmt: Statement,
 }
@@ -46,16 +87,17 @@ impl InsertStatement {
             if i < rows.len() - 1 {
                 write!(&mut stmt_str, "${},", i).expect("");
             } else {
-                write!(&mut stmt_str, "${},", i).expect("");
+                write!(&mut stmt_str, "${}", i).expect("");
             }
         }
 
-        stmt_str.push_str(");");
+        stmt_str.push(')');
 
         stmt_str
     }
 }
 
+#[derive(Clone)]
 pub struct DeleteStatement {
     stmt: Statement,
 }
@@ -87,14 +129,25 @@ impl PostgresSink {
             client: clt,
             conn,
             pk_cache: HashMap::new(),
+            insert_stmt_cache: InsertStatementCache::new(),
+            delete_stmt_cache: DeleteStatementCache::new(),
         }
     }
 
-    async fn perform_op(&self, event: ChangeEvent) -> Result<(), ()> {
+    async fn perform_op(&mut self, event: ChangeEvent) -> Result<(), ()> {
         match event.op {
             cdc_avro::Op::Insert { row } => {
-                let insert_stmt =
-                    InsertStatement::new(&self.client, "users", &["id", "name", "email"]).await;
+                let insert_stmt = self
+                    .insert_stmt_cache
+                    .get(
+                        &self.client,
+                        &event.table,
+                        row.keys()
+                            .map(|s| s.as_str())
+                            .collect::<Vec<_>>()
+                            .as_slice(),
+                    )
+                    .await;
 
                 if let Err(e) = self
                     .client
@@ -123,7 +176,7 @@ impl PostgresSink {
                 }
             }
             cdc_avro::Op::Delete { key } => {
-                let delete_stmt = DeleteStatement::new(&self.client, "users").await;
+                let delete_stmt = self.delete_stmt_cache.get(&self.client, &event.table).await;
 
                 if let Err(e) = self.client.execute(&delete_stmt.stmt, &[&key]).await {
                     eprintln!("{:?}", e);
@@ -136,7 +189,7 @@ impl PostgresSink {
 }
 
 impl KafkaSink for PostgresSink {
-    async fn on_event(&self, event: ChangeEvent) -> Result<(), ()> {
+    async fn on_event(&mut self, event: ChangeEvent) -> Result<(), ()> {
         self.perform_op(event).await.expect("");
 
         Ok(())
@@ -145,14 +198,13 @@ impl KafkaSink for PostgresSink {
 
 #[cfg(test)]
 mod test {
-    use tokio_postgres::types::IsNull::Yes;
 
     use crate::{DeleteStatement, InsertStatement};
 
     #[test]
     fn simple_insert_str() {
         let insert_str = InsertStatement::gen_str("users", &["id", "name", "email"]);
-        let res_str = "INSERT INTO users (id,name,email,) VALUES ($1,$2,$3,)";
+        let res_str = "INSERT INTO users (id,name,email) VALUES ($1,$2,$3)";
 
         assert_eq!(insert_str, res_str);
     }
@@ -160,7 +212,7 @@ mod test {
     #[test]
     fn simple_delet_str() {
         let delete_str = DeleteStatement::gen_str("users");
-        let res_str = "DELETE from users where id = $1";
+        let res_str = "DELETE FROM users WHERE id = $1";
 
         assert_eq!(delete_str, res_str);
     }
