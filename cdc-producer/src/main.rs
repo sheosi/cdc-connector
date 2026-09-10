@@ -4,6 +4,7 @@ use cdc_wal_reader::{Producer, ProducerError, ProducerRecord, ReplicationConfig}
 use rdkafka::ClientConfig;
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use rdkafka::util::Timeout;
+use serde::Deserialize;
 
 pub struct KafkaProducer {
     inner: FutureProducer,
@@ -39,15 +40,30 @@ impl Producer for KafkaProducer {
     }
 }
 
+#[derive(Deserialize)]
+struct ProducerConfig {
+    host: String,
+    user: String,
+    password: String,
+    slot_name: String,
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
+    let own_config: ProducerConfig = config::Config::builder()
+        .add_source(config::File::with_name("cdc-producer"))
+        .build()
+        .unwrap()
+        .try_deserialize()
+        .unwrap();
+
     let config = ReplicationConfig::new(
-        "localhost",
-        "cdc",
-        "cdc",      // host, user, password
-        "cdc",      // dbname
-        "cdc_slot", // slot name
-        "cdc_pub",  // publication
+        own_config.host,
+        own_config.user,
+        own_config.password,  // host, user, password
+        "cdc",                // dbname
+        own_config.slot_name, // slot name
+        "cdc_pub",            // publication
     )
     .with_port(5400);
 
