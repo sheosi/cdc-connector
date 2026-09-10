@@ -92,3 +92,9 @@ impl TupleCol {
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    #[test]
+    fn simple_data() {}
+}

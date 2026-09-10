@@ -126,3 +126,12 @@ impl FieldKind {
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    #[test]
+    fn simple_relation() {}
+
+    #[test]
+    fn simple_field() {}
+}

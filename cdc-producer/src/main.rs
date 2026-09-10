@@ -2,26 +2,10 @@ use std::collections::HashMap;
 
 use anyhow::Result;
 
-use cdc_wal_reader::ReplicationConfig;
+use cdc_wal_reader::{Producer, ProducerError, ProducerRecord, ReplicationConfig};
 use rdkafka::ClientConfig;
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use rdkafka::util::Timeout;
-
-pub enum ProducerError {}
-
-pub trait Producer: Send {
-    fn send(
-        &self,
-        record: ProducerRecord,
-    ) -> impl std::future::Future<Output = Result<(), ProducerError>>;
-}
-
-pub struct ProducerRecord {
-    pub topic: String,
-    pub key: Vec<u8>,
-    pub payload: Vec<u8>,
-    pub headers: HashMap<String, Vec<u8>>,
-}
 
 pub struct KafkaProducer {
     inner: FutureProducer,
@@ -69,6 +53,9 @@ async fn main() -> Result<()> {
     )
     .with_port(5400);
 
-    cdc_wal_reader::start_wal_input(config).await.unwrap();
+    // TODO: Give proper brokers
+    cdc_wal_reader::start_wal_input(config, KafkaProducer::new(""))
+        .await
+        .unwrap();
     Ok(())
 }
