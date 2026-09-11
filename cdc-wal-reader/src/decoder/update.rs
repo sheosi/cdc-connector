@@ -13,7 +13,7 @@ pub fn parse(data: bytes::Bytes, relation_map: &HashMap<u32, Relation>) -> Chang
 
     let relation = relation_map.get(&relation_oid).unwrap();
 
-    let old_data = get_old_tuple_data(&data[9..]);
+    let old_data = get_old_tuple_data(&data[8..]);
     let old_data_end = 0;
 
     // TODO: Were does old end?
@@ -30,6 +30,90 @@ pub fn parse(data: bytes::Bytes, relation_map: &HashMap<u32, Relation>) -> Chang
 
 #[cfg(test)]
 mod test {
+    use std::collections::HashMap;
+
+    use cdc_avro::ChangeEvent;
+
+    use crate::decoder::{
+        common,
+        relation::{Field, FieldKind, Relation},
+        update::parse,
+    };
+
     #[test]
-    fn simple_update() {}
+    fn simple_update_key() {
+        let data = bytes::Bytes::from_static(&[
+            0, 0, 0, 1, // Event ID
+            0, 0, 0, 1, // Relation OID
+            // Old tuple
+            b'K', 0, 1, // Tuple with only key
+            // First col
+            b'b', 0, 0, 0, 4, // Binary of size 4
+            0, 0, 0, 1, // Int4: 1
+            // New tuple
+            b'N', 0, 2, // First col
+            b'b', 0, 0, 0, 4, // Binary of size 4
+            0, 0, 0, 1, // Int4: 1
+            // Second col
+            b't', 0, 0, 0, 5, // Text of length 5
+            b'h', b'e', b'l', b'l', b'o', // Text hello
+        ]);
+
+        let relation_map = common::get_example_rel_map();
+
+        let event = parse(data, &relation_map);
+
+        let mut row = HashMap::new();
+        row.insert("id".to_string(), "1".to_string());
+
+        let event_example = ChangeEvent {
+            op: cdc_avro::Op::Update {
+                key: "1".to_string(),
+                row,
+            },
+            table: "users".to_string(),
+        };
+
+        assert_eq!(event, event_example);
+    }
+
+    #[test]
+    fn simple_update_object() {
+        let data = bytes::Bytes::from_static(&[
+            0, 0, 0, 1, // Event ID
+            0, 0, 0, 1, // Relation OID
+            b'O', 0, 2, // Return Old tuple
+            // First col
+            b'b', 0, 0, 0, 4, // Binary of size 4
+            0, 0, 0, 1, // Int4: 1
+            // Second col
+            b't', 0, 0, 0, 5, // Text of length 5
+            b'h', b'e', b'l', b'l', b'o', // Text hello
+            // New tuple
+            b'N', 0, 2, // First col
+            b'b', 0, 0, 0, 4, // Binary of size 4
+            0, 0, 0, 1, // Int4: 1
+            // Second col
+            b't', 0, 0, 0, 5, // Text of length 5
+            b'h', b'e', b'l', b'l', b'o', // Text hello
+        ]);
+
+        let relation_map = common::get_example_rel_map();
+
+        let event = parse(data, &relation_map);
+
+        let mut row = HashMap::new();
+        row.insert("id".to_string(), "1".to_string());
+        row.insert("name".to_string(), "hello".to_string());
+
+        let event_example = ChangeEvent {
+            op: cdc_avro::Op::Update {
+                key: "1".to_string(),
+                row,
+            },
+            table: "users".to_string(),
+        };
+
+        assert_eq!(event, event_example);
+    }
 }

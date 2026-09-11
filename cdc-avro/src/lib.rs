@@ -54,14 +54,17 @@ mod tests {
 
     #[test]
     fn back_and_forth() {
-        let op = Op::Insert {
-            row: maplit::hashmap!("a".to_string()=>"b".to_string()),
+        let event = ChangeEvent {
+            op: Op::Insert {
+                row: maplit::hashmap!("a".to_string()=>"b".to_string()),
+            },
+            table: "users".to_string(),
         };
 
-        let bytes = op.into_avro();
+        let bytes = event.into_avro();
 
-        let back = Op::from_avro(bytes);
+        let back = ChangeEvent::from_avro(&bytes);
 
-        assert_eq!(op, back);
+        assert_eq!(event, back);
     }
 }

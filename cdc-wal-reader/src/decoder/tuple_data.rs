@@ -4,9 +4,9 @@ use bytes::Bytes;
 
 use crate::decoder::relation::Relation;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct TupleData {
-    cols: Vec<TupleCol>,
+    pub(crate) cols: Vec<TupleCol>,
 }
 
 impl TupleData {
@@ -19,7 +19,7 @@ impl TupleData {
 
         for _ in 0..n_cols {
             let col = TupleCol::parse(&data[last_pos..]);
-            last_pos += col.byte_size();
+            last_pos += col.byte_size() + 1;
             cols.push(col);
         }
 
@@ -35,7 +35,7 @@ impl TupleData {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum TupleCol {
     Null,
     Toasted,
@@ -61,8 +61,9 @@ impl TupleCol {
                 let l = u32::from_be_bytes(data[1..5].try_into().unwrap());
                 TupleCol::Bytes(Bytes::copy_from_slice(&data[5..5 + (l as usize)]))
             }
-            _ => {
-                panic!("Wrong letter")
+            a => {
+                println!("{}", a);
+                panic!("Wrong letter in column")
             }
         }
     }
@@ -88,13 +89,64 @@ impl TupleCol {
             TupleCol::Null => todo!(),
             TupleCol::Toasted => todo!(),
             TupleCol::Text(s) => s.clone(),
-            TupleCol::Bytes(_) => todo!(),
+            TupleCol::Bytes(b) => todo!(),
         }
     }
 }
 
 #[cfg(test)]
 mod test {
+    use crate::decoder::common::{
+        col_byte_one, col_text_hello, get_new_tuple_data, get_old_tuple_data,
+    };
+    use crate::decoder::tuple_data::{TupleCol, TupleData};
+
     #[test]
-    fn simple_data() {}
+    fn empty_data() {
+        let data = [0, 0];
+
+        let tuple_data = TupleData::parse(&data);
+        let tuple_data_manual = TupleData { cols: vec![] };
+
+        assert_eq!(tuple_data, tuple_data_manual);
+    }
+
+    #[test]
+    fn one_byte_data() {
+        let data = [0, 1, b'b', 0, 0, 0, 4, 0, 0, 0, 1];
+
+        let tuple_data = TupleData::parse(&data);
+        let tuple_data_manual = TupleData {
+            cols: vec![col_byte_one()],
+        };
+
+        assert_eq!(tuple_data, tuple_data_manual);
+    }
+
+    #[test]
+    fn one_text_col() {
+        let data = [b't', 0, 0, 0, 5, b'h', b'e', b'l', b'l', b'o'];
+
+        let tuple_col = TupleCol::parse(&data);
+
+        assert_eq!(tuple_col, col_text_hello());
+    }
+
+    #[test]
+    fn byte_and_text_data() {
+        let data = [
+            0, 2, // Two columns
+            b'b', 0, 0, 0, 4, // Col 1: Binary 4 bytes
+            0, 0, 0, 1, // Int4: 1
+            b't', 0, 0, 0, 5, // Col 2: Text 5 bytes
+            b'h', b'e', b'l', b'l', b'o', // Text: hello
+        ];
+
+        let tuple_data = TupleData::parse(&data);
+        let tuple_data_manual = TupleData {
+            cols: vec![col_byte_one(), col_text_hello()],
+        };
+
+        assert_eq!(tuple_data, tuple_data_manual);
+    }
 }

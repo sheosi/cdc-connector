@@ -1,12 +1,12 @@
 use bytes::Bytes;
 use std::ffi::CStr;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Relation {
     pub relation_oid: u32,
-    namespace: String,
+    pub namespace: String,
     pub relname: String,
-    replica_id: String,
+    pub replica_id: u8,
     pub fields: Vec<Field>,
 }
 
@@ -26,20 +26,15 @@ impl Relation {
             .to_string();
 
         let replica_id_pos = 5 + namespace.len() + 1 + relname.len() + 1;
-
-        let replica_id = CStr::from_bytes_until_nul(&data[replica_id_pos..])
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .to_string();
+        let replica_id = data[replica_id_pos];
 
         let cols = u16::from_be_bytes(
-            data[replica_id_pos + replica_id.len()..replica_id_pos + replica_id.len() + 2]
+            data[replica_id_pos + 1..replica_id_pos + 3]
                 .try_into()
                 .unwrap(),
         );
 
-        let mut col_start_id = replica_id_pos + 1 + replica_id.len() + 1;
+        let mut col_start_id = replica_id_pos + 3;
         let mut fields = Vec::with_capacity(cols as usize);
 
         for _ in 0..cols {
@@ -64,11 +59,11 @@ impl Relation {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Field {
-    is_key: bool,
+    pub is_key: bool,
     pub name: String,
-    kind: FieldKind,
+    pub kind: FieldKind,
 }
 
 impl Field {
@@ -93,6 +88,12 @@ impl Field {
         let after_name = 1 + name.len() + 1;
 
         let t_oid = u32::from_be_bytes(data[after_name..after_name + 4].try_into().unwrap());
+
+        println!(
+            "data: {:?}, oid {}",
+            &data[after_name..after_name + 4],
+            t_oid
+        );
         let t_mod = u32::from_be_bytes(data[after_name + 4..after_name + 8].try_into().unwrap());
 
         Ok(Field {
@@ -111,8 +112,8 @@ impl Field {
     }
 }
 
-#[derive(Debug)]
-enum FieldKind {
+#[derive(Debug, PartialEq)]
+pub enum FieldKind {
     Int4,
     Text,
 }
@@ -129,9 +130,54 @@ impl FieldKind {
 
 #[cfg(test)]
 mod test {
-    #[test]
-    fn simple_relation() {}
+    use crate::decoder::relation::{Field, FieldKind, Relation};
+
+    fn field_id() -> Field {
+        Field {
+            is_key: true,
+            kind: FieldKind::Int4,
+            name: "id".to_string(),
+        }
+    }
 
     #[test]
-    fn simple_field() {}
+    fn simple_relation() {
+        let data = bytes::Bytes::from_static(&[
+            b'R', // Relation
+            0, 0, 0, 1, // Relation OID
+            b'p', b'u', b'b', b'l', b'i', b'c', 0, // Namespace
+            b'u', b's', b'e', b'r', b's', 0, // Relation name
+            0, // Replica identity setting
+            0, 1, // Number of columns
+            // Column 1
+            1, // Flags: Is key
+            b'i', b'd', 0, // Name of the column: id
+            0, 0, 0, 23, // Type oid (int4)
+            0, 0, 0, 0, // Attrmod
+        ]);
+        let relation = Relation::parse(data);
+
+        let relation_manual = Relation {
+            relation_oid: 1,
+            namespace: "public".to_string(),
+            relname: "users".to_string(),
+            replica_id: 0,
+            fields: vec![field_id()],
+        };
+
+        assert_eq!(relation, Some(relation_manual));
+    }
+
+    #[test]
+    fn simple_field() {
+        let data = [
+            1, // Flags: Is key
+            b'i', b'd', 0, //Name of the column: id
+            0, 0, 0, 23, // Type oid (int4)
+            0, 0, 0, 0, // Attrmod
+        ];
+        let field = Field::parse(&data);
+
+        assert_eq!(field, Ok(field_id()));
+    }
 }
