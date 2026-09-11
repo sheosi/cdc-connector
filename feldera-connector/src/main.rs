@@ -18,8 +18,13 @@ pub enum Error {
 #[derive(Deserialize, Default)]
 pub struct BridgeConfig {
     pub kafka: KafkaConfig,
-    pub feldera_url: String,
-    pub feldera_pipeline: String,
+    pub feldera: FelderaConfig,
+}
+
+#[derive(Deserialize, Default)]
+pub struct FelderaConfig {
+    pub url: String,
+    pub pipeline: String,
 }
 
 pub struct FelderaConnector {
@@ -114,7 +119,7 @@ async fn main() {
 
     cdc_sink::consume_from_kafka(
         config.kafka,
-        FelderaConnector::new(&config.feldera_url, config.feldera_pipeline),
+        FelderaConnector::new(&config.feldera.url, config.feldera.pipeline),
     )
     .await;
 }
