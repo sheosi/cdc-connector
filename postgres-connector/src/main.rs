@@ -1,9 +1,13 @@
-use cdc_avro::ChangeEvent;
+use cdc_avro::{ChangeEvent, PgValue};
 use cdc_sink::{KafkaConfig, KafkaSink};
 use config::Config;
 use serde::Deserialize;
 use std::collections::HashMap;
-use tokio_postgres::{Connection, NoTls, Socket, tls::NoTlsStream};
+use tokio_postgres::{
+    Connection, NoTls, Socket,
+    tls::NoTlsStream,
+    types::{IsNull, ToSql},
+};
 
 use crate::statements::{DeleteStatementCache, InsertStatementCache};
 
@@ -68,7 +72,7 @@ impl PostgresSink {
 
     async fn perform_op(&mut self, event: ChangeEvent) -> Result<(), ()> {
         match event.op {
-            cdc_avro::Op::Insert { row } => {
+            cdc_avro::Op::Insert { mut row } => {
                 let insert_stmt = self
                     .insert_stmt_cache
                     .get(
@@ -85,14 +89,18 @@ impl PostgresSink {
                     .client
                     .execute(
                         &insert_stmt.stmt,
-                        &[&row["id"], &row["name"], &row["email"]],
+                        &[
+                            &ToSqlWrapper(row.remove("id").unwrap()),
+                            &ToSqlWrapper(row.remove("name").unwrap()),
+                            &ToSqlWrapper(row.remove("email").unwrap()),
+                        ],
                     )
                     .await
                 {
                     eprintln!("{:?}", e);
                 }
             }
-            cdc_avro::Op::Update { key, row } => {
+            cdc_avro::Op::Update { key, mut row } => {
                 let update_stmt = self
                     .client
                     .prepare("INSERT INTO users (id,name,email) VALUES ($1, $2,$3)")
@@ -101,7 +109,14 @@ impl PostgresSink {
 
                 if let Err(e) = self
                     .client
-                    .execute(&update_stmt, &[&row["id"], &row["name"], &row["user"]])
+                    .execute(
+                        &update_stmt,
+                        &[
+                            &ToSqlWrapper(row.remove("id").unwrap()),
+                            &ToSqlWrapper(row.remove("name").unwrap()),
+                            &ToSqlWrapper(row.remove("user").unwrap()),
+                        ],
+                    )
                     .await
                 {
                     eprintln!("{:?}", e);
@@ -125,5 +140,42 @@ impl KafkaSink for PostgresSink {
         self.perform_op(event).await.expect("");
 
         Ok(())
+    }
+}
+
+#[derive(Debug)]
+struct ToSqlWrapper(PgValue);
+
+impl ToSql for ToSqlWrapper {
+    fn to_sql(
+        &self,
+        ty: &tokio_postgres::types::Type,
+        out: &mut tokio_postgres::types::private::BytesMut,
+    ) -> Result<IsNull, Box<dyn std::error::Error + Sync + Send>>
+    where
+        Self: Sized,
+    {
+        match &self.0 {
+            PgValue::Text(s) => s.to_sql(ty, out),
+            PgValue::Int4(n) => n.to_sql(ty, out),
+        }
+    }
+
+    fn accepts(_ty: &tokio_postgres::types::Type) -> bool
+    where
+        Self: Sized,
+    {
+        true
+    }
+
+    fn to_sql_checked(
+        &self,
+        ty: &tokio_postgres::types::Type,
+        out: &mut tokio_postgres::types::private::BytesMut,
+    ) -> Result<IsNull, Box<dyn std::error::Error + Sync + Send>> {
+        match &self.0 {
+            PgValue::Text(s) => s.to_sql_checked(ty, out),
+            PgValue::Int4(n) => n.to_sql_checked(ty, out),
+        }
     }
 }

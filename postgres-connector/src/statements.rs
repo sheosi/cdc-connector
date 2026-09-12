@@ -107,7 +107,7 @@ impl DeleteStatement {
 #[cfg(test)]
 mod test {
 
-    use crate::{DeleteStatement, InsertStatement};
+    use crate::statements::{DeleteStatement, InsertStatement};
 
     #[test]
     fn simple_insert_str() {

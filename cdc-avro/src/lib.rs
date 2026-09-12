@@ -7,11 +7,11 @@ use serde::{Deserialize, Serialize};
 #[derive(AvroSchema, Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum Op {
     Insert {
-        row: HashMap<String, String>,
+        row: HashMap<String, PgValue>,
     },
     Update {
         key: String,
-        row: HashMap<String, String>,
+        row: HashMap<String, PgValue>,
     },
     Delete {
         key: String,
@@ -47,6 +47,26 @@ impl ChangeEvent {
 
 const CHANGE_EVENT_SCHEMA: LazyLock<Schema> = LazyLock::new(|| ChangeEvent::get_schema());
 
+#[derive(AvroSchema, Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub enum PgValue {
+    Text(String),
+    Int4(u32),
+}
+
+impl PgValue {}
+
+impl From<String> for PgValue {
+    fn from(value: String) -> Self {
+        Self::Text(value)
+    }
+}
+
+impl From<u32> for PgValue {
+    fn from(value: u32) -> Self {
+        Self::Int4(value)
+    }
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -56,7 +76,7 @@ mod tests {
     fn back_and_forth() {
         let event = ChangeEvent {
             op: Op::Insert {
-                row: maplit::hashmap!("a".to_string()=>"b".to_string()),
+                row: maplit::hashmap!("a".to_string()=>PgValue::Text( "b".to_string())),
             },
             table: "users".to_string(),
         };

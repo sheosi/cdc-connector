@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use cdc_avro::ChangeEvent;
+use cdc_avro::PgValue;
 use cdc_sink::KafkaConfig;
 use cdc_sink::KafkaSink;
 use config::Config;
@@ -34,8 +35,8 @@ pub struct FelderaConnector {
 
 #[derive(Serialize)]
 enum FelderaEvent {
-    Insert(HashMap<String, String>),
-    Delete(HashMap<String, String>),
+    Insert(HashMap<String, PgValue>),
+    Delete(HashMap<String, PgValue>),
 }
 
 impl FelderaEvent {

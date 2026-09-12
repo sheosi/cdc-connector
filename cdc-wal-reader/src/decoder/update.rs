@@ -17,7 +17,7 @@ pub fn parse(data: bytes::Bytes, relation_map: &HashMap<u32, Relation>) -> Chang
     let old_data_end = 0;
 
     // TODO: Were does old end?
-    let new_data = get_new_tuple_data(&data[old_data_end..]).to_row(&relation);
+    let new_data = get_new_tuple_data(&data[old_data_end..]).into_row(&relation);
 
     ChangeEvent {
         op: cdc_avro::Op::Update {
@@ -32,7 +32,7 @@ pub fn parse(data: bytes::Bytes, relation_map: &HashMap<u32, Relation>) -> Chang
 mod test {
     use std::collections::HashMap;
 
-    use cdc_avro::ChangeEvent;
+    use cdc_avro::{ChangeEvent, PgValue};
 
     use crate::decoder::{
         common,
@@ -64,7 +64,7 @@ mod test {
         let event = parse(data, &relation_map);
 
         let mut row = HashMap::new();
-        row.insert("id".to_string(), "1".to_string());
+        row.insert("id".to_string(), cdc_avro::PgValue::Text("1".to_string()));
 
         let event_example = ChangeEvent {
             op: cdc_avro::Op::Update {
@@ -103,8 +103,11 @@ mod test {
         let event = parse(data, &relation_map);
 
         let mut row = HashMap::new();
-        row.insert("id".to_string(), "1".to_string());
-        row.insert("name".to_string(), "hello".to_string());
+        row.insert("id".to_string(), PgValue::Int4(1));
+        row.insert(
+            "name".to_string(),
+            cdc_avro::PgValue::Text("hello".to_string()),
+        );
 
         let event_example = ChangeEvent {
             op: cdc_avro::Op::Update {

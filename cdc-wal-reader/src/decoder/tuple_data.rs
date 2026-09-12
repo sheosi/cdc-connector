@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
 use bytes::Bytes;
+use cdc_avro::PgValue;
 
-use crate::decoder::relation::Relation;
+use crate::decoder::relation::{Field, Relation};
 
 #[derive(Debug, PartialEq)]
 pub struct TupleData {
@@ -26,11 +27,11 @@ impl TupleData {
         TupleData { cols }
     }
 
-    pub fn to_row(&self, relation: &Relation) -> HashMap<String, String> {
+    pub fn into_row(self, relation: &Relation) -> HashMap<String, PgValue> {
         self.cols
-            .iter()
+            .into_iter()
             .zip(relation.fields.iter())
-            .map(|(d, r)| (r.name.clone(), d.to_string()))
+            .map(|(d, r)| (r.name.clone(), d.to_pg_value(&r)))
             .collect()
     }
 }
@@ -84,12 +85,17 @@ impl TupleCol {
         4 + inner
     }
 
-    fn to_string(&self) -> String {
+    fn to_pg_value(self, rel_field: &Field) -> PgValue {
         match self {
             TupleCol::Null => todo!(),
             TupleCol::Toasted => todo!(),
-            TupleCol::Text(s) => s.clone(),
-            TupleCol::Bytes(b) => todo!(),
+            TupleCol::Text(s) => PgValue::Text(s),
+            TupleCol::Bytes(b) => match rel_field.kind {
+                super::relation::FieldKind::Int4 => {
+                    PgValue::Int4(u32::from_be_bytes(b[0..4].try_into().unwrap()))
+                }
+                _ => panic!("Wrong kind of field kind"),
+            },
         }
     }
 }
