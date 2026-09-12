@@ -2,22 +2,39 @@ use std::collections::HashMap;
 
 use cdc_avro::ChangeEvent;
 
-use crate::decoder::{common::get_old_tuple_data, relation::Relation};
+use crate::decoder::{
+    DecoderError::{self, TruncatedInput},
+    common::get_old_tuple_data,
+    relation::Relation,
+};
 
 /// Parse the bytes of a delete command, don't include the initial 'D' present
-pub fn parse(data: bytes::Bytes, relation_map: &HashMap<u32, Relation>) -> ChangeEvent {
-    let id = u32::from_be_bytes(data[0..4].try_into().unwrap());
-    let relation_oid = u32::from_be_bytes(data[4..8].try_into().unwrap());
+pub fn parse(
+    data: bytes::Bytes,
+    relation_map: &HashMap<u32, Relation>,
+) -> Result<ChangeEvent, DecoderError> {
+    let id = u32::from_be_bytes(
+        data[0..4]
+            .try_into()
+            .map_err(|_| DecoderError::TruncatedInput)?,
+    );
+    let relation_oid = u32::from_be_bytes(
+        data[4..8]
+            .try_into()
+            .map_err(|_| DecoderError::TruncatedInput)?,
+    );
 
-    let relation = relation_map.get(&relation_oid).unwrap();
+    let relation = relation_map
+        .get(&relation_oid)
+        .ok_or_else(|| DecoderError::UnknownRelation(relation_oid))?;
 
-    let key = get_old_tuple_data(&data[8..]);
+    let key = get_old_tuple_data(&data[8..])?;
 
     // TODO: Properly obtain key
-    ChangeEvent {
+    Ok(ChangeEvent {
         op: cdc_avro::Op::Delete { key: String::new() },
         table: relation.relname.clone(),
-    }
+    })
 }
 
 #[cfg(test)]

@@ -18,11 +18,17 @@ async fn main() {
     let config: BridgeConfig = Config::builder()
         .add_source(config::File::with_name("feldera-connector"))
         .build()
-        .unwrap()
+        .expect("Failed to find postgres-connect config")
         .try_deserialize()
-        .unwrap();
+        .expect("postgres-connect config is malformed");
 
-    cdc_sink::consume_from_kafka(config.kafka, PostgresSink::new(config.postgres).await).await;
+    cdc_sink::consume_from_kafka(
+        config.kafka,
+        PostgresSink::new(config.postgres)
+            .await
+            .expect("Failed to connect to postgres"),
+    )
+    .await;
 }
 
 #[derive(Deserialize)]
@@ -56,18 +62,16 @@ pub struct PostgresSink {
 }
 
 impl PostgresSink {
-    async fn new(config: PostgresConfig) -> Self {
-        let (clt, conn) = tokio_postgres::connect(&config.to_postgres_string(), NoTls)
-            .await
-            .unwrap();
+    async fn new(config: PostgresConfig) -> Result<Self, tokio_postgres::Error> {
+        let (clt, conn) = tokio_postgres::connect(&config.to_postgres_string(), NoTls).await?;
 
-        Self {
+        Ok(Self {
             client: clt,
             conn,
             pk_cache: HashMap::new(),
             insert_stmt_cache: InsertStatementCache::new(),
             delete_stmt_cache: DeleteStatementCache::new(),
-        }
+        })
     }
 
     async fn perform_op(&mut self, event: ChangeEvent) -> Result<(), ()> {
@@ -83,7 +87,8 @@ impl PostgresSink {
                             .collect::<Vec<_>>()
                             .as_slice(),
                     )
-                    .await;
+                    .await
+                    .expect("Failed to generate insert statement");
 
                 if let Err(e) = self
                     .client
@@ -101,6 +106,7 @@ impl PostgresSink {
                 }
             }
             cdc_avro::Op::Update { key, mut row } => {
+                // TODO: how to process updates, should we upsert or not?
                 let update_stmt = self
                     .client
                     .prepare("INSERT INTO users (id,name,email) VALUES ($1, $2,$3)")
@@ -123,7 +129,11 @@ impl PostgresSink {
                 }
             }
             cdc_avro::Op::Delete { key } => {
-                let delete_stmt = self.delete_stmt_cache.get(&self.client, &event.table).await;
+                let delete_stmt = self
+                    .delete_stmt_cache
+                    .get(&self.client, &event.table)
+                    .await
+                    .expect("Failed to generate insert statement");
 
                 if let Err(e) = self.client.execute(&delete_stmt.stmt, &[&key]).await {
                     eprintln!("{:?}", e);

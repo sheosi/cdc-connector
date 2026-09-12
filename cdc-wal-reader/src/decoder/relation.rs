@@ -1,6 +1,8 @@
 use bytes::Bytes;
 use std::ffi::CStr;
 
+use crate::decoder::DecoderError;
+
 #[derive(Debug, PartialEq)]
 pub struct Relation {
     pub relation_oid: u32,
@@ -11,18 +13,20 @@ pub struct Relation {
 }
 
 impl Relation {
-    pub fn parse(data: Bytes) -> Option<Relation> {
-        let relation_oid = u32::from_be_bytes(data[1..5].try_into().unwrap());
+    pub fn parse(data: Bytes) -> Result<Relation, DecoderError> {
+        let relation_oid = u32::from_be_bytes(
+            data[1..5]
+                .try_into()
+                .map_err(|_| DecoderError::TruncatedInput)?,
+        );
         let namespace = CStr::from_bytes_until_nul(&data[5..])
-            .unwrap()
-            .to_str()
-            .unwrap()
+            .map_err(|_| DecoderError::TruncatedInput)?
+            .to_str()?
             .to_string();
 
         let relname = CStr::from_bytes_until_nul(&data[5 + namespace.len() + 1..])
-            .unwrap()
-            .to_str()
-            .unwrap()
+            .map_err(|_| DecoderError::TruncatedInput)?
+            .to_str()?
             .to_string();
 
         let replica_id_pos = 5 + namespace.len() + 1 + relname.len() + 1;
@@ -31,7 +35,7 @@ impl Relation {
         let cols = u16::from_be_bytes(
             data[replica_id_pos + 1..replica_id_pos + 3]
                 .try_into()
-                .unwrap(),
+                .map_err(|_| DecoderError::TruncatedInput)?,
         );
 
         let mut col_start_id = replica_id_pos + 3;
@@ -39,17 +43,20 @@ impl Relation {
 
         for _ in 0..cols {
             match Field::parse(&data[col_start_id..]) {
-                Ok(field) => {
+                Ok(FieldParseResult::Physical(field)) => {
                     col_start_id += field.byte_size();
                     fields.push(field);
                 }
-                Err(b) => {
+                Ok(FieldParseResult::Logical(b)) => {
                     col_start_id += b;
+                }
+                Err(e) => {
+                    return Err(e);
                 }
             }
         }
 
-        Some(Relation {
+        Ok(Relation {
             relation_oid,
             namespace,
             relname,
@@ -66,41 +73,59 @@ pub struct Field {
     pub kind: FieldKind,
 }
 
+/**  A field in a relation can be physical (in that it exists on disk) or logical
+ * (a computed value of sorts), logical fields aren't present in WAL outputs
+ * so we are going to ignore them. However, we do need to know the ammount of space
+ * they take to continue parsing
+ */
+#[derive(Debug, PartialEq)]
+pub enum FieldParseResult {
+    Physical(Field),
+    Logical(usize),
+}
+
 impl Field {
     /// The Field might be logical, and thus not present, in those cases we don't
     /// store it, but we need the size of it
-    fn parse(data: &[u8]) -> Result<Field, usize> {
+    fn parse(data: &[u8]) -> Result<FieldParseResult, DecoderError> {
         let flag = data[0];
         let name = CStr::from_bytes_until_nul(&data[1..])
-            .unwrap()
-            .to_str()
-            .unwrap()
+            .map_err(|_| DecoderError::TruncatedInput)?
+            .to_str()?
             .to_string();
 
         let is_key = match flag {
             0 => false,
             1 => true,
             // mean a logical field
-            2 | 3 => return Err(Self::byte_size_len(name.len())),
-            _ => panic!("Wrong flag"),
+            2 | 3 => return Ok(FieldParseResult::Logical(Self::byte_size_len(name.len()))),
+            a => return Err(DecoderError::WrongFieldDataFlag(a)),
         };
 
         let after_name = 1 + name.len() + 1;
 
-        let t_oid = u32::from_be_bytes(data[after_name..after_name + 4].try_into().unwrap());
+        let t_oid = u32::from_be_bytes(
+            data[after_name..after_name + 4]
+                .try_into()
+                .map_err(|_| DecoderError::TruncatedInput)?,
+        );
 
         println!(
             "data: {:?}, oid {}",
             &data[after_name..after_name + 4],
             t_oid
         );
-        let t_mod = u32::from_be_bytes(data[after_name + 4..after_name + 8].try_into().unwrap());
+        let t_mod = u32::from_be_bytes(
+            data[after_name + 4..after_name + 8]
+                .try_into()
+                .map_err(|_| DecoderError::TruncatedInput)?,
+        );
 
-        Ok(Field {
+        Ok(FieldParseResult::Physical(Field {
             is_key,
             name,
-            kind: FieldKind::from_oid_mod(t_oid, t_mod),
-        })
+            kind: FieldKind::from_oid_mod(t_oid, t_mod)?,
+        }))
     }
 
     fn byte_size_len(str_len: usize) -> usize {
@@ -112,18 +137,18 @@ impl Field {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum FieldKind {
     Int4,
     Text,
 }
 
 impl FieldKind {
-    fn from_oid_mod(t_oid: u32, t_mod: u32) -> Self {
+    fn from_oid_mod(t_oid: u32, t_mod: u32) -> Result<Self, DecoderError> {
         match t_oid {
-            23 => Self::Int4,
-            25 => Self::Text,
-            a => panic!("Invalid OID: {}", a),
+            23 => Ok(Self::Int4),
+            25 => Ok(Self::Text),
+            a => Err(DecoderError::InvalidOid(a)),
         }
     }
 }

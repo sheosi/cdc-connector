@@ -44,9 +44,15 @@ pub async fn consume_from_kafka<S: KafkaSink>(own_config: KafkaConfig, mut sink:
         match result {
             Ok(borrowed_message) => {
                 if let Some(view) = borrowed_message.payload_view::<[u8]>() {
-                    let event = ChangeEvent::from_avro(view.expect(""));
-                    if let Err(e) = sink.on_event(event).await {
-                        eprintln!("{:?}", e);
+                    match ChangeEvent::from_avro(view.expect("")) {
+                        Ok(event) => {
+                            if let Err(e) = sink.on_event(event).await {
+                                eprintln!("{:?}", e);
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to retrieve avro: {}", e)
+                        }
                     }
                 }
             }

@@ -4,6 +4,7 @@ use apache_avro::{Reader, from_value};
 
 use apache_avro::{AvroSchema, Schema};
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 #[derive(AvroSchema, Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum Op {
     Insert {
@@ -18,6 +19,15 @@ pub enum Op {
     },
 }
 
+#[derive(Debug, Error)]
+pub enum FromAvroError {
+    #[error("No events where found in the transmission")]
+    NoEvents,
+
+    #[error("While deserializeing from Avro: {0}")]
+    Avro(#[from] apache_avro::Error),
+}
+
 #[derive(AvroSchema, Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct ChangeEvent {
     pub op: Op,
@@ -25,23 +35,25 @@ pub struct ChangeEvent {
 }
 
 impl ChangeEvent {
-    pub fn from_avro(bytes: &[u8]) -> Self {
-        let reader = Reader::new(std::io::Cursor::new(bytes)).unwrap();
+    pub fn from_avro(bytes: &[u8]) -> Result<Self, FromAvroError> {
+        let reader = Reader::new(std::io::Cursor::new(bytes))?;
         for result in reader {
-            let new_event: ChangeEvent = from_value(&result.unwrap()).unwrap();
-            return new_event;
+            let new_event: ChangeEvent = from_value(&result?)?;
+            return Ok(new_event);
         }
-        panic!("Something should be returned");
+
+        Err(FromAvroError::NoEvents)
     }
 
-    pub fn into_avro(&self) -> Vec<u8> {
+    pub fn into_avro(&self) -> Result<Vec<u8>, apache_avro::Error> {
         let schema = &CHANGE_EVENT_SCHEMA;
-        let mut writer = apache_avro::Writer::new(schema, Vec::new()).unwrap();
 
-        writer.append_ser(self).unwrap();
-        writer.flush().unwrap();
+        let mut writer = apache_avro::Writer::new(schema, Vec::with_capacity(100))?;
 
-        writer.into_inner().unwrap()
+        writer.append_ser(self)?;
+        writer.flush()?;
+
+        writer.into_inner()
     }
 }
 
@@ -81,9 +93,9 @@ mod tests {
             table: "users".to_string(),
         };
 
-        let bytes = event.into_avro();
+        let bytes = event.into_avro().unwrap();
 
-        let back = ChangeEvent::from_avro(&bytes);
+        let back = ChangeEvent::from_avro(&bytes).unwrap();
 
         assert_eq!(event, back);
     }

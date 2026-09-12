@@ -1,7 +1,7 @@
 use anyhow::Result;
 
 use cdc_avro::ChangeEvent;
-use cdc_wal_reader::{Producer, ProducerError, ReplicationConfig};
+use cdc_wal_reader::{Producer, ReplicationConfig};
 use rdkafka::ClientConfig;
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use rdkafka::util::Timeout;
@@ -14,12 +14,11 @@ pub struct KafkaProducer {
 }
 
 impl KafkaProducer {
-    fn new(config: &KafkaConfig) -> Result<Self, ()> {
+    fn new(config: &KafkaConfig) -> Result<Self, rdkafka::error::KafkaError> {
         let producer: FutureProducer = ClientConfig::new()
             .set("bootstrap.servers", config.brokers.clone())
             .set("message.timeout.ms", "5000")
-            .create()
-            .unwrap();
+            .create()?;
 
         Ok(Self {
             inner: producer,
@@ -30,8 +29,8 @@ impl KafkaProducer {
 }
 
 impl Producer for KafkaProducer {
-    async fn send(&self, event: ChangeEvent) -> Result<(), ProducerError> {
-        let payload = event.into_avro();
+    async fn send(&self, event: ChangeEvent) -> Result<(), String> {
+        let payload = event.into_avro().map_err(|e| e.to_string())?;
         let future_record = FutureRecord::to(&self.topic)
             .key(&self.key)
             .payload(&payload);
@@ -42,7 +41,7 @@ impl Producer for KafkaProducer {
                 Timeout::After(std::time::Duration::from_secs(5)),
             )
             .await
-            .unwrap();
+            .map_err(|(e, _)| e.to_string())?;
 
         Ok(())
     }
@@ -74,9 +73,9 @@ async fn main() -> Result<()> {
     let own_config: ProducerConfig = config::Config::builder()
         .add_source(config::File::with_name("cdc-producer"))
         .build()
-        .unwrap()
+        .expect("Failed to find cdc-producer config")
         .try_deserialize()
-        .unwrap();
+        .expect("cdc-producer config is malformated");
 
     let config = ReplicationConfig::new(
         own_config.postgres.host,
@@ -88,9 +87,11 @@ async fn main() -> Result<()> {
     )
     .with_port(5400);
 
-    // TODO: Give proper brokers
-    cdc_wal_reader::start_wal_input(config, KafkaProducer::new(&own_config.kafka).unwrap())
-        .await
-        .unwrap();
+    cdc_wal_reader::start_wal_input(
+        config,
+        KafkaProducer::new(&own_config.kafka).expect("Failed to init kafka"),
+    )
+    .await
+    .expect("Wal input loop had an error");
     Ok(())
 }

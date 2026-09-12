@@ -1,23 +1,28 @@
 #[cfg(test)]
 use std::collections::HashMap;
 
-use crate::decoder::tuple_data::TupleData;
+use crate::decoder::{
+    DecoderError::{self, WrongOldTupleKey},
+    tuple_data::TupleData,
+};
 #[cfg(test)]
 use crate::decoder::{
     relation::{Field, FieldKind, Relation},
     tuple_data::TupleCol,
 };
 
-pub fn get_old_tuple_data(data: &[u8]) -> TupleData {
+pub fn get_old_tuple_data(data: &[u8]) -> Result<TupleData, DecoderError> {
     match data[0] {
         b'K' => TupleData::parse(&data[1..]),
         b'O' => TupleData::parse(&data[1..]),
-        _ => panic!("Wrong key"),
+        a => Err(WrongOldTupleKey(a)),
     }
 }
 
-pub fn get_new_tuple_data(data: &[u8]) -> TupleData {
-    assert!(data[0] == b'N');
+pub fn get_new_tuple_data(data: &[u8]) -> Result<TupleData, DecoderError> {
+    if data[0] != b'N' {
+        return Err(DecoderError::WrongNewTupleKey(data[0]));
+    }
 
     TupleData::parse(&data[1..])
 }

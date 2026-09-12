@@ -3,7 +3,10 @@ use std::collections::HashMap;
 use bytes::Bytes;
 use cdc_avro::PgValue;
 
-use crate::decoder::relation::{Field, Relation};
+use crate::decoder::{
+    DecoderError,
+    relation::{Field, Relation},
+};
 
 #[derive(Debug, PartialEq)]
 pub struct TupleData {
@@ -11,28 +14,37 @@ pub struct TupleData {
 }
 
 impl TupleData {
-    pub fn parse(data: &[u8]) -> TupleData {
+    pub fn parse(data: &[u8]) -> Result<TupleData, DecoderError> {
         // Network byte order is be
-        let n_cols = u16::from_be_bytes(data[0..2].try_into().unwrap());
+        let n_cols = u16::from_be_bytes(
+            data[0..2]
+                .try_into()
+                .map_err(|_| DecoderError::TruncatedInput)?,
+        );
 
         let mut last_pos = 2;
         let mut cols = Vec::with_capacity(n_cols as usize);
 
         for _ in 0..n_cols {
-            let col = TupleCol::parse(&data[last_pos..]);
-            last_pos += col.byte_size() + 1;
-            cols.push(col);
+            match TupleCol::parse(&data[last_pos..]) {
+                Ok(col) => {
+                    last_pos += col.byte_size() + 1;
+                    cols.push(col);
+                }
+                Err(e) => return Err(e),
+            }
         }
 
-        TupleData { cols }
+        Ok(TupleData { cols })
     }
 
-    pub fn into_row(self, relation: &Relation) -> HashMap<String, PgValue> {
-        self.cols
+    pub fn into_row(self, relation: &Relation) -> Result<HashMap<String, PgValue>, DecoderError> {
+        Ok(self
+            .cols
             .into_iter()
             .zip(relation.fields.iter())
-            .map(|(d, r)| (r.name.clone(), d.to_pg_value(&r)))
-            .collect()
+            .map(|(d, r)| d.to_pg_value(&r).map(|pg| (r.name.clone(), pg)))
+            .collect::<Result<HashMap<_, _>, _>>()?)
     }
 }
 
@@ -45,27 +57,35 @@ pub enum TupleCol {
 }
 
 impl TupleCol {
-    fn parse(data: &[u8]) -> TupleCol {
+    fn parse(data: &[u8]) -> Result<TupleCol, DecoderError> {
         match data[0] {
-            b'n' => TupleCol::Null,
-            b'u' => TupleCol::Toasted,
+            b'n' => Ok(TupleCol::Null),
+            b'u' => Ok(TupleCol::Toasted),
             b't' => {
                 // Here's be because we are using network endianness (always big endian)
-                let l = u32::from_be_bytes(data[1..5].try_into().unwrap());
-                TupleCol::Text(
-                    str::from_utf8(&data[5..5 + (l as usize)])
-                        .unwrap()
-                        .to_string(),
-                )
+                let l = u32::from_be_bytes(
+                    data[1..5]
+                        .try_into()
+                        .map_err(|_| DecoderError::TruncatedInput)?,
+                ) as usize;
+
+                if data.len() < 5 + l {
+                    return Err(DecoderError::TruncatedInput);
+                }
+
+                Ok(TupleCol::Text(str::from_utf8(&data[5..5 + l])?.to_string()))
             }
             b'b' => {
-                let l = u32::from_be_bytes(data[1..5].try_into().unwrap());
-                TupleCol::Bytes(Bytes::copy_from_slice(&data[5..5 + (l as usize)]))
+                let l = u32::from_be_bytes(
+                    data[1..5]
+                        .try_into()
+                        .map_err(|_| DecoderError::TruncatedInput)?,
+                );
+                Ok(TupleCol::Bytes(Bytes::copy_from_slice(
+                    &data[5..5 + (l as usize)],
+                )))
             }
-            a => {
-                println!("{}", a);
-                panic!("Wrong letter in column")
-            }
+            a => Err(DecoderError::WrongColTypeKey(a)),
         }
     }
 
@@ -85,16 +105,18 @@ impl TupleCol {
         4 + inner
     }
 
-    fn to_pg_value(self, rel_field: &Field) -> PgValue {
+    fn to_pg_value(self, rel_field: &Field) -> Result<PgValue, DecoderError> {
         match self {
             TupleCol::Null => todo!(),
             TupleCol::Toasted => todo!(),
-            TupleCol::Text(s) => PgValue::Text(s),
+            TupleCol::Text(s) => Ok(PgValue::Text(s)),
             TupleCol::Bytes(b) => match rel_field.kind {
-                super::relation::FieldKind::Int4 => {
-                    PgValue::Int4(u32::from_be_bytes(b[0..4].try_into().unwrap()))
-                }
-                _ => panic!("Wrong kind of field kind"),
+                super::relation::FieldKind::Int4 => Ok(PgValue::Int4(u32::from_be_bytes(
+                    b[0..4]
+                        .try_into()
+                        .map_err(|_| DecoderError::TruncatedInput)?,
+                ))),
+                a => Err(DecoderError::WrongFieldKind(a)),
             },
         }
     }

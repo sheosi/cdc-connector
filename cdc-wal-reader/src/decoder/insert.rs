@@ -2,19 +2,32 @@ use std::collections::HashMap;
 
 use cdc_avro::ChangeEvent;
 
-use crate::decoder::{common::get_new_tuple_data, relation::Relation};
+use crate::decoder::{
+    DecoderError,
+    common::get_new_tuple_data,
+    relation::{self, Relation},
+};
 
-pub fn parse(data: bytes::Bytes, relation_map: &HashMap<u32, Relation>) -> ChangeEvent {
-    let relation_oid = u32::from_be_bytes(data[1..5].try_into().unwrap());
+pub fn parse(
+    data: bytes::Bytes,
+    relation_map: &HashMap<u32, Relation>,
+) -> Result<ChangeEvent, DecoderError> {
+    let relation_oid = u32::from_be_bytes(
+        data[1..5]
+            .try_into()
+            .map_err(|_| DecoderError::TruncatedInput)?,
+    );
 
-    let relation = relation_map.get(&relation_oid).unwrap();
+    let relation = relation_map
+        .get(&relation_oid)
+        .ok_or_else(|| DecoderError::UnknownRelation(relation_oid))?;
 
-    let row = get_new_tuple_data(&data[5..]).into_row(&relation);
+    let row = get_new_tuple_data(&data[5..])?.into_row(&relation)?;
 
-    ChangeEvent {
+    Ok(ChangeEvent {
         op: cdc_avro::Op::Insert { row },
         table: relation.relname.clone(),
-    }
+    })
 }
 
 #[cfg(test)]

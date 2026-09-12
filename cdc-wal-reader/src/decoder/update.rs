@@ -3,29 +3,43 @@ use std::collections::HashMap;
 use cdc_avro::ChangeEvent;
 
 use crate::decoder::{
+    DecoderError,
     common::{get_new_tuple_data, get_old_tuple_data},
     relation::Relation,
 };
 
-pub fn parse(data: bytes::Bytes, relation_map: &HashMap<u32, Relation>) -> ChangeEvent {
-    let id = u32::from_be_bytes(data[0..4].try_into().unwrap());
-    let relation_oid = u32::from_be_bytes(data[4..8].try_into().unwrap());
+pub fn parse(
+    data: bytes::Bytes,
+    relation_map: &HashMap<u32, Relation>,
+) -> Result<ChangeEvent, DecoderError> {
+    let id = u32::from_be_bytes(
+        data[0..4]
+            .try_into()
+            .map_err(|_| DecoderError::TruncatedInput)?,
+    );
+    let relation_oid = u32::from_be_bytes(
+        data[4..8]
+            .try_into()
+            .map_err(|_| DecoderError::TruncatedInput)?,
+    );
 
-    let relation = relation_map.get(&relation_oid).unwrap();
+    let relation = relation_map
+        .get(&relation_oid)
+        .ok_or_else(|| DecoderError::UnknownRelation(relation_oid))?;
 
     let old_data = get_old_tuple_data(&data[8..]);
     let old_data_end = 0;
 
     // TODO: Were does old end?
-    let new_data = get_new_tuple_data(&data[old_data_end..]).into_row(&relation);
+    let new_data = get_new_tuple_data(&data[old_data_end..])?.into_row(&relation)?;
 
-    ChangeEvent {
+    Ok(ChangeEvent {
         op: cdc_avro::Op::Update {
             key: String::new(), // How do we obtain this?
             row: new_data,
         },
         table: relation.relname.clone(),
-    }
+    })
 }
 
 #[cfg(test)]

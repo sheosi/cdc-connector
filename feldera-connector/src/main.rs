@@ -12,8 +12,11 @@ use serde::Serialize;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("A")]
-    A,
+    #[error("Feldera api had an error {0}")]
+    Feldera(#[from] feldera_rest_api::Error<feldera_types::error::ErrorResponse>),
+
+    #[error("Serialization {0}")]
+    Serialization(#[from] serde_json::Error),
 }
 
 #[derive(Deserialize, Default)]
@@ -62,16 +65,16 @@ impl FelderaEvent {
         result
     }
 
-    fn to_lines(batch: Vec<Self>) -> String {
+    fn to_lines(batch: Vec<Self>) -> Result<String, serde_json::Error> {
         let mut result = Vec::new();
 
         for op in batch.into_iter() {
-            serde_json::to_writer(&mut result, &op).unwrap();
+            serde_json::to_writer(&mut result, &op)?;
             result.push(b'\n');
         }
 
         // This is fine, we know that serde_json (and what we add) is all UTF-8
-        unsafe { String::from_utf8_unchecked(result) }
+        Ok(unsafe { String::from_utf8_unchecked(result) })
     }
 }
 
@@ -83,7 +86,7 @@ impl FelderaConnector {
     }
 
     pub async fn insert_batch(&self, table: &str, records: Vec<ChangeEvent>) -> Result<(), Error> {
-        let json_str = FelderaEvent::to_lines(FelderaEvent::convert_op_batches(records));
+        let json_str = FelderaEvent::to_lines(FelderaEvent::convert_op_batches(records))?;
 
         self.inner
             .http_input()
@@ -93,17 +96,16 @@ impl FelderaConnector {
             .update_format(feldera_types::format::json::JsonUpdateFormat::InsertDelete)
             .body(json_str)
             .send()
-            .await
-            .unwrap();
+            .await?;
 
         Ok(())
     }
 }
 impl KafkaSink for FelderaConnector {
-    async fn on_event(&mut self, event: ChangeEvent) -> Result<(), ()> {
+    async fn on_event(&mut self, event: ChangeEvent) -> Result<(), String> {
         self.insert_batch(&event.table.clone(), vec![event])
             .await
-            .unwrap();
+            .map_err(|e| e.to_string());
 
         Ok(())
     }
@@ -114,9 +116,9 @@ async fn main() {
     let config: BridgeConfig = Config::builder()
         .add_source(config::File::with_name("feldera-connector"))
         .build()
-        .unwrap()
+        .expect("Failed to load feldera-connector config")
         .try_deserialize()
-        .unwrap();
+        .expect("Feldera-connector config was malformed");
 
     cdc_sink::consume_from_kafka(
         config.kafka,

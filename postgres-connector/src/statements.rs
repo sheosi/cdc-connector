@@ -9,16 +9,21 @@ impl InsertStatementCache {
         Self(HashMap::new())
     }
 
-    pub async fn get(&mut self, client: &Client, table: &str, rows: &[&str]) -> InsertStatement {
+    pub async fn get(
+        &mut self,
+        client: &Client,
+        table: &str,
+        rows: &[&str],
+    ) -> Result<InsertStatement, tokio_postgres::Error> {
         let key = format!("{}{:?}", table, rows);
 
         use std::collections::hash_map::Entry;
 
         match self.0.entry(key) {
-            Entry::Occupied(e) => e.get().clone(),
-            Entry::Vacant(e) => e
-                .insert(InsertStatement::new(client, table, rows).await)
-                .clone(),
+            Entry::Occupied(e) => Ok(e.get().clone()),
+            Entry::Vacant(e) => Ok(e
+                .insert(InsertStatement::new(client, table, rows).await?)
+                .clone()),
         }
     }
 }
@@ -30,12 +35,16 @@ impl DeleteStatementCache {
         Self(HashMap::new())
     }
 
-    pub async fn get(&mut self, client: &Client, table: &str) -> DeleteStatement {
+    pub async fn get(
+        &mut self,
+        client: &Client,
+        table: &str,
+    ) -> Result<DeleteStatement, tokio_postgres::Error> {
         use std::collections::hash_map::Entry;
 
         match self.0.entry(table.to_string()) {
-            Entry::Occupied(e) => e.get().clone(),
-            Entry::Vacant(e) => e.insert(DeleteStatement::new(client, table).await).clone(),
+            Entry::Occupied(e) => Ok(e.get().clone()),
+            Entry::Vacant(e) => Ok(e.insert(DeleteStatement::new(client, table).await?).clone()),
         }
     }
 }
@@ -46,10 +55,14 @@ pub struct InsertStatement {
 }
 
 impl InsertStatement {
-    pub async fn new(client: &tokio_postgres::Client, table: &str, rows: &[&str]) -> Self {
-        let stmt = client.prepare(&Self::gen_str(table, rows)).await.unwrap();
+    pub async fn new(
+        client: &tokio_postgres::Client,
+        table: &str,
+        rows: &[&str],
+    ) -> Result<Self, tokio_postgres::Error> {
+        let stmt = client.prepare(&Self::gen_str(table, rows)).await?;
 
-        InsertStatement { stmt }
+        Ok(InsertStatement { stmt })
     }
 
     fn gen_str(table: &str, rows: &[&str]) -> String {
@@ -86,13 +99,13 @@ pub struct DeleteStatement {
 }
 
 impl DeleteStatement {
-    pub async fn new(client: &tokio_postgres::Client, table: &str) -> Self {
-        let stmt = client
-            .prepare(&DeleteStatement::gen_str(table))
-            .await
-            .unwrap();
+    pub async fn new(
+        client: &tokio_postgres::Client,
+        table: &str,
+    ) -> Result<Self, tokio_postgres::Error> {
+        let stmt = client.prepare(&DeleteStatement::gen_str(table)).await?;
 
-        DeleteStatement { stmt }
+        Ok(DeleteStatement { stmt })
     }
 
     fn gen_str(table: &str) -> String {
