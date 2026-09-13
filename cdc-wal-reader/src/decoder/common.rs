@@ -14,14 +14,19 @@ use crate::decoder::{
     tuple_data::TupleCol,
 };
 
-pub fn get_old_tuple_data(data: &[u8], relation: &Relation) -> Result<OverrideData, DecoderError> {
+pub fn get_old_tuple_data(
+    data: &[u8],
+    relation: &Relation,
+) -> Result<(OverrideData, usize), DecoderError> {
     match data[0] {
-        b'K' => Ok(OverrideData::Key(
-            TupleData::parse(&data[1..])?.into_keys(relation)?,
-        )),
-        b'O' => Ok(OverrideData::Row(
-            TupleData::parse(&data[1..])?.into_row(relation)?,
-        )),
+        b'K' => {
+            let (tuple, size) = TupleData::parse(&data[1..])?;
+            Ok((OverrideData::Key(tuple.into_keys(relation)?), size + 1))
+        }
+        b'O' => {
+            let (tuple, size) = TupleData::parse(&data[1..])?;
+            Ok((OverrideData::Row(tuple.into_row(relation)?), size + 1))
+        }
         a => Err(WrongOldTupleKey(a)),
     }
 }
@@ -31,7 +36,8 @@ pub fn get_new_tuple_data(data: &[u8]) -> Result<TupleData, DecoderError> {
         return Err(DecoderError::WrongNewTupleKey(data[0]));
     }
 
-    TupleData::parse(&data[1..])
+    let (tuple, _) = TupleData::parse(&data[1..])?;
+    Ok(tuple)
 }
 
 #[cfg(test)]
@@ -98,7 +104,7 @@ mod test {
         let old_tuple = get_old_tuple_data(&data, &get_example_rel());
         let old_tuple_manual = OverrideData::Row(HashMap::new());
 
-        assert_eq!(old_tuple, Ok(old_tuple_manual));
+        assert_eq!(old_tuple, Ok((old_tuple_manual, 3)));
     }
 
     #[test]
@@ -108,7 +114,7 @@ mod test {
         let key_tuple = get_old_tuple_data(&data, &get_example_rel());
         let key_tuple_manual = OverrideData::Key(Vec::new());
 
-        assert_eq!(key_tuple, Ok(key_tuple_manual));
+        assert_eq!(key_tuple, Ok((key_tuple_manual, 3)));
     }
 
     #[test]
@@ -131,7 +137,7 @@ mod test {
 
         let old_tuple_manual = OverrideData::Row(row);
 
-        assert_eq!(old_tuple, Ok(old_tuple_manual));
+        assert_eq!(old_tuple, Ok((old_tuple_manual, 23)));
     }
 
     #[test]

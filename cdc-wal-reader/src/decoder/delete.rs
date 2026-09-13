@@ -28,7 +28,7 @@ pub fn parse(
         .get(&relation_oid)
         .ok_or_else(|| DecoderError::UnknownRelation(relation_oid))?;
 
-    let key = get_old_tuple_data(&data[8..], relation)?;
+    let (key, _) = get_old_tuple_data(&data[8..], relation)?;
 
     Ok(ChangeEvent {
         op: cdc_avro::Op::Delete { key },
@@ -89,7 +89,7 @@ mod test {
 
         let mut row = HashMap::new();
         row.insert("id".to_string(), PgValue::Int4(1));
-        row.insert("users".to_string(), PgValue::Text("hello".to_string()));
+        row.insert("name".to_string(), PgValue::Text("hello".to_string()));
 
         let event_example = ChangeEvent {
             op: cdc_avro::Op::Delete {

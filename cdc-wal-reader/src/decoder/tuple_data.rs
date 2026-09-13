@@ -14,7 +14,7 @@ pub struct TupleData {
 }
 
 impl TupleData {
-    pub fn parse(data: &[u8]) -> Result<TupleData, DecoderError> {
+    pub fn parse(data: &[u8]) -> Result<(TupleData, usize), DecoderError> {
         // Network byte order is be
         let n_cols = u16::from_be_bytes(
             data[0..2]
@@ -35,7 +35,7 @@ impl TupleData {
             }
         }
 
-        Ok(TupleData { cols })
+        Ok((TupleData { cols }, last_pos))
     }
 
     pub fn into_row(self, relation: &Relation) -> Result<HashMap<String, PgValue>, DecoderError> {
@@ -161,7 +161,7 @@ mod test {
         let tuple_data = TupleData::parse(&data);
         let tuple_data_manual = TupleData { cols: vec![] };
 
-        assert_eq!(tuple_data, Ok(tuple_data_manual));
+        assert_eq!(tuple_data, Ok((tuple_data_manual, 2)));
     }
 
     #[test]
@@ -173,7 +173,7 @@ mod test {
             cols: vec![col_byte_one()],
         };
 
-        assert_eq!(tuple_data, Ok(tuple_data_manual));
+        assert_eq!(tuple_data, Ok((tuple_data_manual, 11)));
     }
 
     #[test]
@@ -200,6 +200,6 @@ mod test {
             cols: vec![col_byte_one(), col_text_hello()],
         };
 
-        assert_eq!(tuple_data, Ok(tuple_data_manual));
+        assert_eq!(tuple_data, Ok((tuple_data_manual, 22)));
     }
 }
