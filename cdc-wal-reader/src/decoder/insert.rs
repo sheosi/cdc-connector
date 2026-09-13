@@ -66,6 +66,6 @@ mod test {
             table: "users".to_string(),
         };
 
-        assert_eq!(event, event_example);
+        assert_eq!(event, Ok(event_example));
     }
 }

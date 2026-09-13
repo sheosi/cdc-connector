@@ -161,7 +161,7 @@ mod test {
         let tuple_data = TupleData::parse(&data);
         let tuple_data_manual = TupleData { cols: vec![] };
 
-        assert_eq!(tuple_data, tuple_data_manual);
+        assert_eq!(tuple_data, Ok(tuple_data_manual));
     }
 
     #[test]
@@ -173,7 +173,7 @@ mod test {
             cols: vec![col_byte_one()],
         };
 
-        assert_eq!(tuple_data, tuple_data_manual);
+        assert_eq!(tuple_data, Ok(tuple_data_manual));
     }
 
     #[test]
@@ -182,7 +182,7 @@ mod test {
 
         let tuple_col = TupleCol::parse(&data);
 
-        assert_eq!(tuple_col, col_text_hello());
+        assert_eq!(tuple_col, Ok(col_text_hello()));
     }
 
     #[test]
@@ -200,6 +200,6 @@ mod test {
             cols: vec![col_byte_one(), col_text_hello()],
         };
 
-        assert_eq!(tuple_data, tuple_data_manual);
+        assert_eq!(tuple_data, Ok(tuple_data_manual));
     }
 }

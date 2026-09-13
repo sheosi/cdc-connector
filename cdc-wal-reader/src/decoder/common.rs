@@ -10,7 +10,7 @@ use crate::decoder::{
 };
 #[cfg(test)]
 use crate::decoder::{
-    relation::{Field, FieldKind, Relation},
+    relation::{Field, FieldKind, KeyField},
     tuple_data::TupleCol,
 };
 
@@ -37,29 +37,35 @@ pub fn get_new_tuple_data(data: &[u8]) -> Result<TupleData, DecoderError> {
 #[cfg(test)]
 pub fn get_example_rel_map() -> HashMap<u32, Relation> {
     let mut relation_map = HashMap::new();
-    relation_map.insert(
-        1u32,
-        Relation {
-            relation_oid: 1,
-            namespace: "public".to_string(),
-            relname: "users".to_string(),
-            replica_id: 0,
-            fields: vec![
-                Field {
-                    name: "id".to_string(),
-                    is_key: true,
-                    kind: FieldKind::Int4,
-                },
-                Field {
-                    name: "name".to_string(),
-                    is_key: false,
-                    kind: FieldKind::Text,
-                },
-            ],
-        },
-    );
+    relation_map.insert(1u32, get_example_rel());
 
     relation_map
+}
+
+#[cfg(test)]
+pub fn get_example_rel() -> Relation {
+    Relation {
+        relation_oid: 1,
+        namespace: "public".to_string(),
+        relname: "users".to_string(),
+        replica_id: 0,
+        fields: vec![
+            Field {
+                name: "id".to_string(),
+                is_key: true,
+                kind: FieldKind::Int4,
+            },
+            Field {
+                name: "name".to_string(),
+                is_key: false,
+                kind: FieldKind::Text,
+            },
+        ],
+        key_fields: vec![KeyField {
+            name: "id".to_string(),
+            kind: FieldKind::Int4,
+        }],
+    }
 }
 
 #[cfg(test)]
@@ -74,8 +80,14 @@ pub fn col_text_hello() -> TupleCol {
 
 #[cfg(test)]
 mod test {
+    use std::collections::HashMap;
+
+    use cdc_avro::{OverrideData, PgValue};
+
     use crate::decoder::{
-        common::{col_byte_one, col_text_hello, get_new_tuple_data, get_old_tuple_data},
+        common::{
+            col_byte_one, col_text_hello, get_example_rel, get_new_tuple_data, get_old_tuple_data,
+        },
         tuple_data::TupleData,
     };
 
@@ -83,20 +95,20 @@ mod test {
     fn empty_old_tuple_data_key() {
         let data = [b'O', 0, 0];
 
-        let old_tuple = get_old_tuple_data(&data);
-        let old_tuple_manual = TupleData { cols: vec![] };
+        let old_tuple = get_old_tuple_data(&data, &get_example_rel());
+        let old_tuple_manual = OverrideData::Row(HashMap::new());
 
-        assert_eq!(old_tuple, old_tuple_manual);
+        assert_eq!(old_tuple, Ok(old_tuple_manual));
     }
 
     #[test]
     fn empty_key_tuple_data_key() {
         let data = [b'K', 0, 0];
 
-        let key_tuple = get_old_tuple_data(&data);
-        let key_tuple_manual = TupleData { cols: vec![] };
+        let key_tuple = get_old_tuple_data(&data, &get_example_rel());
+        let key_tuple_manual = OverrideData::Key(Vec::new());
 
-        assert_eq!(key_tuple, key_tuple_manual);
+        assert_eq!(key_tuple, Ok(key_tuple_manual));
     }
 
     #[test]
@@ -111,12 +123,15 @@ mod test {
             b'h', b'e', b'l', b'l', b'o', // Text hello
         ];
 
-        let old_tuple = get_old_tuple_data(&data);
-        let old_tuple_manual = TupleData {
-            cols: vec![col_byte_one(), col_text_hello()],
-        };
+        let old_tuple = get_old_tuple_data(&data, &get_example_rel());
 
-        assert_eq!(old_tuple, old_tuple_manual);
+        let mut row = HashMap::new();
+        row.insert("id".to_string(), PgValue::Int4(1));
+        row.insert("name".to_string(), PgValue::Text("hello".to_string()));
+
+        let old_tuple_manual = OverrideData::Row(row);
+
+        assert_eq!(old_tuple, Ok(old_tuple_manual));
     }
 
     #[test]
@@ -136,6 +151,6 @@ mod test {
             cols: vec![col_byte_one(), col_text_hello()],
         };
 
-        assert_eq!(new_tuple, new_tuple_manual);
+        assert_eq!(new_tuple, Ok(new_tuple_manual));
     }
 }

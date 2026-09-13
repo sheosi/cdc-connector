@@ -180,7 +180,7 @@ impl FieldKind {
 
 #[cfg(test)]
 mod test {
-    use crate::decoder::relation::{Field, FieldKind, KeyField, Relation};
+    use crate::decoder::relation::{Field, FieldKind, FieldParseResult, KeyField, Relation};
 
     fn field_id() -> Field {
         Field {
@@ -223,7 +223,7 @@ mod test {
             key_fields: vec![key_field_id()],
         };
 
-        assert_eq!(relation, Some(relation_manual));
+        assert_eq!(relation, Ok(relation_manual));
     }
 
     #[test]
@@ -236,6 +236,6 @@ mod test {
         ];
         let field = Field::parse(&data);
 
-        assert_eq!(field, Ok(field_id()));
+        assert_eq!(field, Ok(FieldParseResult::Physical(field_id())));
     }
 }

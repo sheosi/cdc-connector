@@ -2,7 +2,7 @@ use std::str::Utf8Error;
 
 use thiserror::Error;
 
-use crate::decoder::{relation::FieldKind, tuple_data::TupleCol};
+use crate::decoder::relation::FieldKind;
 
 pub mod delete;
 pub mod insert;
@@ -12,7 +12,7 @@ pub mod update;
 
 mod common;
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, PartialEq)]
 pub enum DecoderError {
     #[error("Found wrong old tuple key '{0}'")]
     WrongOldTupleKey(u8),
