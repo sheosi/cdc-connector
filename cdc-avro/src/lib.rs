@@ -81,7 +81,7 @@ impl ChangeEvent {
     pub fn into_avro(&self) -> Result<Vec<u8>, apache_avro::Error> {
         let schema = &CHANGE_EVENT_SCHEMA;
 
-        let mut writer = apache_avro::Writer::new(schema, Vec::with_capacity(100))?;
+        let mut writer = apache_avro::Writer::new(schema, Vec::with_capacity(256))?;
 
         writer.append_ser(self)?;
         writer.flush()?;

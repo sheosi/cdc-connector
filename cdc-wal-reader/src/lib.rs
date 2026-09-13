@@ -4,6 +4,7 @@ use cdc_avro::ChangeEvent;
 use pgwire_replication::{ReplicationClient, ReplicationEvent};
 
 pub use pgwire_replication::ReplicationConfig;
+use tokio_postgres::NoTls;
 
 use crate::decoder::DecoderError;
 
@@ -27,8 +28,12 @@ where
 
 pub async fn start_wal_input<P: Producer>(
     config: ReplicationConfig,
+    replica_identity_full: bool,
     producer: P,
 ) -> Result<(), pgwire_replication::PgWireError> {
+    configure_replica_identity(&config, replica_identity_full)
+        .await
+        .unwrap();
     let mut client = ReplicationClient::connect(config).await?;
     let mut relation_map = HashMap::new();
 
@@ -63,6 +68,55 @@ pub async fn start_wal_input<P: Producer>(
             }
             ev => println!("other: {:?}", ev),
         }
+    }
+
+    Ok(())
+}
+
+async fn configure_replica_identity(
+    config: &ReplicationConfig,
+    replica_identity_full: bool,
+) -> Result<(), ()> {
+    let pg_config = tokio_postgres::Config::new()
+        .host(&config.host)
+        .port(config.port)
+        .user(&config.user)
+        .password(&config.password)
+        .dbname(&config.database)
+        .to_owned();
+
+    let (clt, connection) = pg_config.connect(NoTls).await.unwrap();
+    tokio::spawn(connection);
+
+    let pub_names: Vec<String> = config.publication.names().to_vec();
+
+    let identity = if replica_identity_full {
+        "FULl"
+    } else {
+        "DEFAULT"
+    };
+
+    let rows = clt
+        .query(
+            "SELECT schemaname, tablename
+               FROM pg_publication_tables
+               WHERE pubname = ANY($1)",
+            &[&pub_names],
+        )
+        .await
+        .unwrap();
+
+    for row in rows {
+        let schema: String = row.get(0);
+        let table: String = row.get(1);
+        let fullname = format!("{}.{}", schema, table);
+
+        clt.execute(
+            &format!("ALTER TABLE {} REPLICA IDENTITY {}", fullname, identity),
+            &[],
+        )
+        .await
+        .unwrap();
     }
 
     Ok(())

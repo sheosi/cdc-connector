@@ -13,3 +13,4 @@ serde = { version = "1.0.229", features = ["derive"] }
 tokio = {version = "1.53.1", features = ["full"]}
 cdc-avro = {path = "../cdc-avro"}
 thiserror = "2.0.20"
+tokio-postgres = "0.7.18"

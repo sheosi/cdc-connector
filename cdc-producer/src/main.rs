@@ -51,6 +51,7 @@ impl Producer for KafkaProducer {
 struct ProducerConfig {
     postgres: PostgresConfig,
     kafka: KafkaConfig,
+    will_connect_to_feldera: bool,
 }
 
 #[derive(Deserialize)]
@@ -89,6 +90,7 @@ async fn main() -> Result<()> {
 
     cdc_wal_reader::start_wal_input(
         config,
+        own_config.will_connect_to_feldera,
         KafkaProducer::new(&own_config.kafka).expect("Failed to init kafka"),
     )
     .await
