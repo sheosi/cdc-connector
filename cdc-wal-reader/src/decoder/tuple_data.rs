@@ -5,7 +5,7 @@ use cdc_avro::PgValue;
 
 use crate::decoder::{
     DecoderError,
-    relation::{Field, Relation},
+    relation::{Field, KeyField, Relation},
 };
 
 #[derive(Debug, PartialEq)]
@@ -45,6 +45,15 @@ impl TupleData {
             .zip(relation.fields.iter())
             .map(|(d, r)| d.to_pg_value(&r).map(|pg| (r.name.clone(), pg)))
             .collect::<Result<HashMap<_, _>, _>>()?)
+    }
+
+    pub fn into_keys(self, relation: &Relation) -> Result<Vec<PgValue>, DecoderError> {
+        Ok(self
+            .cols
+            .into_iter()
+            .zip(relation.key_fields.iter())
+            .map(|(c, r)| c.to_pg_value_kf(r))
+            .collect::<Result<Vec<_>, _>>()?)
     }
 }
 
@@ -106,6 +115,22 @@ impl TupleCol {
     }
 
     fn to_pg_value(self, rel_field: &Field) -> Result<PgValue, DecoderError> {
+        match self {
+            TupleCol::Null => todo!(),
+            TupleCol::Toasted => todo!(),
+            TupleCol::Text(s) => Ok(PgValue::Text(s)),
+            TupleCol::Bytes(b) => match rel_field.kind {
+                super::relation::FieldKind::Int4 => Ok(PgValue::Int4(u32::from_be_bytes(
+                    b[0..4]
+                        .try_into()
+                        .map_err(|_| DecoderError::TruncatedInput)?,
+                ))),
+                a => Err(DecoderError::WrongFieldKind(a)),
+            },
+        }
+    }
+
+    fn to_pg_value_kf(self, rel_field: &KeyField) -> Result<PgValue, DecoderError> {
         match self {
             TupleCol::Null => todo!(),
             TupleCol::Toasted => todo!(),

@@ -1,8 +1,11 @@
 #[cfg(test)]
 use std::collections::HashMap;
 
+use cdc_avro::OverrideData;
+
 use crate::decoder::{
     DecoderError::{self, WrongOldTupleKey},
+    relation::Relation,
     tuple_data::TupleData,
 };
 #[cfg(test)]
@@ -11,10 +14,14 @@ use crate::decoder::{
     tuple_data::TupleCol,
 };
 
-pub fn get_old_tuple_data(data: &[u8]) -> Result<TupleData, DecoderError> {
+pub fn get_old_tuple_data(data: &[u8], relation: &Relation) -> Result<OverrideData, DecoderError> {
     match data[0] {
-        b'K' => TupleData::parse(&data[1..]),
-        b'O' => TupleData::parse(&data[1..]),
+        b'K' => Ok(OverrideData::Key(
+            TupleData::parse(&data[1..])?.into_keys(relation)?,
+        )),
+        b'O' => Ok(OverrideData::Row(
+            TupleData::parse(&data[1..])?.into_row(relation)?,
+        )),
         a => Err(WrongOldTupleKey(a)),
     }
 }

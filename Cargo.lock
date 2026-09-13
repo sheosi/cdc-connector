@@ -2344,6 +2344,7 @@ dependencies = [
  "config",
  "rdkafka",
  "serde",
+ "thiserror 2.0.20",
  "tokio",
  "tokio-postgres",
 ]

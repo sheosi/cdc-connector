@@ -10,6 +10,10 @@ pub struct Relation {
     pub relname: String,
     pub replica_id: u8,
     pub fields: Vec<Field>,
+
+    /// A subset of above, they are the fields marked as keys, for when only keys
+    /// are searched for
+    pub key_fields: Vec<KeyField>,
 }
 
 impl Relation {
@@ -60,6 +64,20 @@ impl Relation {
             relation_oid,
             namespace,
             relname,
+            key_fields: fields
+                .iter()
+                .filter_map(|f| {
+                    if f.is_key {
+                        Some(KeyField {
+                            name: f.name.clone(),
+                            kind: f.kind.clone(),
+                        })
+                    } else {
+                        None
+                    }
+                })
+                .collect(),
+
             fields,
             replica_id,
         })
@@ -69,6 +87,13 @@ impl Relation {
 #[derive(Debug, PartialEq)]
 pub struct Field {
     pub is_key: bool,
+    pub name: String,
+    pub kind: FieldKind,
+}
+
+// We already know those are keys, we don't need the is_key
+#[derive(Debug, PartialEq)]
+pub struct KeyField {
     pub name: String,
     pub kind: FieldKind,
 }
@@ -155,11 +180,18 @@ impl FieldKind {
 
 #[cfg(test)]
 mod test {
-    use crate::decoder::relation::{Field, FieldKind, Relation};
+    use crate::decoder::relation::{Field, FieldKind, KeyField, Relation};
 
     fn field_id() -> Field {
         Field {
             is_key: true,
+            kind: FieldKind::Int4,
+            name: "id".to_string(),
+        }
+    }
+
+    fn key_field_id() -> KeyField {
+        KeyField {
             kind: FieldKind::Int4,
             name: "id".to_string(),
         }
@@ -188,6 +220,7 @@ mod test {
             relname: "users".to_string(),
             replica_id: 0,
             fields: vec![field_id()],
+            key_fields: vec![key_field_id()],
         };
 
         assert_eq!(relation, Some(relation_manual));

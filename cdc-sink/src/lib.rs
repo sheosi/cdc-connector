@@ -15,8 +15,10 @@ pub struct KafkaConfig {
 }
 
 pub trait KafkaSink {
-    fn on_event(&mut self, event: ChangeEvent)
-    -> impl std::future::Future<Output = Result<(), ()>>;
+    fn on_event(
+        &mut self,
+        event: ChangeEvent,
+    ) -> impl std::future::Future<Output = Result<(), String>>;
 }
 
 pub async fn consume_from_kafka<S: KafkaSink>(own_config: KafkaConfig, mut sink: S) {

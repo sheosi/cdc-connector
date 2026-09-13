@@ -3,6 +3,7 @@ use cdc_sink::{KafkaConfig, KafkaSink};
 use config::Config;
 use serde::Deserialize;
 use std::collections::HashMap;
+use thiserror::Error;
 use tokio_postgres::{
     Connection, NoTls, Socket,
     tls::NoTlsStream,
@@ -29,6 +30,12 @@ async fn main() {
             .expect("Failed to connect to postgres"),
     )
     .await;
+}
+
+#[derive(Debug, Error)]
+enum BridgeError {
+    #[error("A")]
+    A,
 }
 
 #[derive(Deserialize)]
@@ -74,7 +81,7 @@ impl PostgresSink {
         })
     }
 
-    async fn perform_op(&mut self, event: ChangeEvent) -> Result<(), ()> {
+    async fn perform_op(&mut self, event: ChangeEvent) -> Result<(), BridgeError> {
         match event.op {
             cdc_avro::Op::Insert { mut row } => {
                 let insert_stmt = self
@@ -135,7 +142,23 @@ impl PostgresSink {
                     .await
                     .expect("Failed to generate insert statement");
 
-                if let Err(e) = self.client.execute(&delete_stmt.stmt, &[&key]).await {
+                let keys: Vec<ToSqlWrapper> = match key {
+                    cdc_avro::OverrideData::Key(vals) => {
+                        vals.into_iter().map(|v| ToSqlWrapper(v)).collect()
+                    }
+                    cdc_avro::OverrideData::Row(..) => {
+                        todo!()
+                    }
+                };
+
+                let keys_ref: Vec<&(dyn ToSql + Sync)> =
+                    keys.iter().map(|k| k as &(dyn ToSql + Sync)).collect();
+
+                if let Err(e) = self
+                    .client
+                    .execute(&delete_stmt.stmt, keys_ref.as_slice())
+                    .await
+                {
                     eprintln!("{:?}", e);
                 }
             }
@@ -146,8 +169,8 @@ impl PostgresSink {
 }
 
 impl KafkaSink for PostgresSink {
-    async fn on_event(&mut self, event: ChangeEvent) -> Result<(), ()> {
-        self.perform_op(event).await.expect("");
+    async fn on_event(&mut self, event: ChangeEvent) -> Result<(), String> {
+        self.perform_op(event).await.map_err(|e| e.to_string());
 
         Ok(())
     }

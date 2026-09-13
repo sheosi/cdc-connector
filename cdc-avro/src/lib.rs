@@ -11,12 +11,18 @@ pub enum Op {
         row: HashMap<String, PgValue>,
     },
     Update {
-        key: String,
+        key: OverrideData,
         row: HashMap<String, PgValue>,
     },
     Delete {
-        key: String,
+        key: OverrideData,
     },
+}
+
+#[derive(AvroSchema, Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub enum OverrideData {
+    Key(Vec<PgValue>),
+    Row(HashMap<String, PgValue>),
 }
 
 #[derive(Debug, Error)]

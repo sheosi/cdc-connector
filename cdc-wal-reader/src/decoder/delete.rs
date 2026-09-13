@@ -28,18 +28,19 @@ pub fn parse(
         .get(&relation_oid)
         .ok_or_else(|| DecoderError::UnknownRelation(relation_oid))?;
 
-    let key = get_old_tuple_data(&data[8..])?;
+    let key = get_old_tuple_data(&data[8..], relation)?;
 
-    // TODO: Properly obtain key
     Ok(ChangeEvent {
-        op: cdc_avro::Op::Delete { key: String::new() },
+        op: cdc_avro::Op::Delete { key },
         table: relation.relname.clone(),
     })
 }
 
 #[cfg(test)]
 mod test {
-    use cdc_avro::ChangeEvent;
+    use std::collections::HashMap;
+
+    use cdc_avro::{ChangeEvent, PgValue};
 
     use crate::decoder::{common, delete::parse};
 
@@ -60,7 +61,7 @@ mod test {
 
         let event_example = ChangeEvent {
             op: cdc_avro::Op::Delete {
-                key: "1".to_string(),
+                key: cdc_avro::OverrideData::Key(vec![PgValue::Int4(1)]),
             },
             table: "users".to_string(),
         };
@@ -86,9 +87,13 @@ mod test {
 
         let event = parse(data, &relation_map);
 
+        let mut row = HashMap::new();
+        row.insert("id".to_string(), PgValue::Int4(1));
+        row.insert("users".to_string(), PgValue::Text("hello".to_string()));
+
         let event_example = ChangeEvent {
             op: cdc_avro::Op::Delete {
-                key: "1".to_string(),
+                key: cdc_avro::OverrideData::Row(row),
             },
             table: "users".to_string(),
         };

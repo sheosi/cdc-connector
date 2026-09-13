@@ -12,3 +12,4 @@ cdc-avro = {path = "../cdc-avro"}
 cdc-sink = {path = "../cdc-sink"}
 config = "0.15.25"
 serde = { version = "1.0.229", features = ["derive"] }
+thiserror = "2.0.20"

@@ -27,17 +27,14 @@ pub fn parse(
         .get(&relation_oid)
         .ok_or_else(|| DecoderError::UnknownRelation(relation_oid))?;
 
-    let old_data = get_old_tuple_data(&data[8..]);
+    let key = get_old_tuple_data(&data[8..], &relation)?;
     let old_data_end = 0;
 
     // TODO: Were does old end?
     let new_data = get_new_tuple_data(&data[old_data_end..])?.into_row(&relation)?;
 
     Ok(ChangeEvent {
-        op: cdc_avro::Op::Update {
-            key: String::new(), // How do we obtain this?
-            row: new_data,
-        },
+        op: cdc_avro::Op::Update { key, row: new_data },
         table: relation.relname.clone(),
     })
 }
@@ -82,7 +79,7 @@ mod test {
 
         let event_example = ChangeEvent {
             op: cdc_avro::Op::Update {
-                key: "1".to_string(),
+                key: cdc_avro::OverrideData::Key(vec![PgValue::Int4(1)]),
                 row,
             },
             table: "users".to_string(),
@@ -116,6 +113,10 @@ mod test {
 
         let event = parse(data, &relation_map);
 
+        let mut old_row = HashMap::new();
+        old_row.insert("id".to_string(), PgValue::Int4(1));
+        old_row.insert("users".to_string(), PgValue::Text("hello".to_string()));
+
         let mut row = HashMap::new();
         row.insert("id".to_string(), PgValue::Int4(1));
         row.insert(
@@ -125,7 +126,7 @@ mod test {
 
         let event_example = ChangeEvent {
             op: cdc_avro::Op::Update {
-                key: "1".to_string(),
+                key: cdc_avro::OverrideData::Row(old_row),
                 row,
             },
             table: "users".to_string(),
