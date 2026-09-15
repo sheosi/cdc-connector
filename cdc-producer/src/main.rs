@@ -1,14 +1,15 @@
 use anyhow::Result;
 
 use cdc_avro::ChangeEvent;
-use cdc_wal_reader::{Producer, ReplicationConfig};
+use cdc_wal_reader::{Producer as CdcProducer, ReplicationConfig};
 use rdkafka::ClientConfig;
-use rdkafka::producer::{FutureProducer, FutureRecord};
+use rdkafka::producer::{FutureProducer, FutureRecord, Producer};
 use rdkafka::util::Timeout;
 use serde::Deserialize;
 
 pub struct KafkaProducer {
     topic: String,
+    lsn_topic: String,
     inner: FutureProducer,
     key: String,
 }
@@ -18,22 +19,34 @@ impl KafkaProducer {
         let producer: FutureProducer = ClientConfig::new()
             .set("bootstrap.servers", config.brokers.clone())
             .set("message.timeout.ms", "5000")
+            .set("transactional.id", "cdc-producer-1")
+            .set("enable.idempotence", "true")
             .create()?;
 
         Ok(Self {
             inner: producer,
             topic: config.topic.clone(),
+            lsn_topic: format!("{}_lsn", config.topic),
             key: config.key.clone(),
         })
     }
 }
 
-impl Producer for KafkaProducer {
+impl CdcProducer for KafkaProducer {
     async fn send(&self, event: ChangeEvent) -> Result<(), String> {
         let payload = event.into_avro().map_err(|e| e.to_string())?;
+        let lsn_payload = (0 as u32).to_be_bytes();
         let future_record = FutureRecord::to(&self.topic)
             .key(&self.key)
             .payload(&payload);
+
+        let lsn_future_record = FutureRecord::to(&self.lsn_topic)
+            .key(&self.key)
+            .payload(&lsn_payload);
+
+        self.inner
+            .init_transactions(std::time::Duration::from_secs(3))
+            .map_err(|e| e.to_string())?;
 
         self.inner
             .send(
@@ -42,6 +55,18 @@ impl Producer for KafkaProducer {
             )
             .await
             .map_err(|(e, _)| e.to_string())?;
+
+        self.inner
+            .send(
+                lsn_future_record,
+                Timeout::After(std::time::Duration::from_secs(5)),
+            )
+            .await
+            .map_err(|(e, _)| e.to_string())?;
+
+        self.inner
+            .commit_transaction(std::time::Duration::from_secs(3))
+            .map_err(|e| e.to_string())?;
 
         Ok(())
     }
