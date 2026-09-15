@@ -48,7 +48,13 @@ pub async fn consume_from_kafka<S: KafkaSink>(own_config: KafkaConfig, mut sink:
                 if let Some(view) = borrowed_message.payload_view::<[u8]>() {
                     match ChangeEvent::from_avro(view.expect("")) {
                         Ok(event) => {
+                            // This is written a little bit awkward but
                             if let Err(e) = sink.on_event(event).await {
+                                eprintln!("{:?}", e);
+                            } else if let Err(e) = consumer.commit_message(
+                                &borrowed_message,
+                                rdkafka::consumer::CommitMode::Async,
+                            ) {
                                 eprintln!("{:?}", e);
                             }
                         }
