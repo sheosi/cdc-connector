@@ -9,11 +9,11 @@ use crate::decoder::{
 };
 
 #[derive(Debug, PartialEq)]
-pub struct TupleData {
-    pub(crate) cols: Vec<TupleCol>,
+pub struct TupleData<'a> {
+    pub(crate) cols: Vec<TupleCol<'a>>,
 }
 
-impl TupleData {
+impl<'a> TupleData<'a> {
     pub fn parse(data: &[u8]) -> Result<(TupleData, usize), DecoderError> {
         // Network byte order is be
         let n_cols = u16::from_be_bytes(
@@ -38,16 +38,19 @@ impl TupleData {
         Ok((TupleData { cols }, last_pos))
     }
 
-    pub fn into_row(self, relation: &Relation) -> Result<HashMap<String, PgValue>, DecoderError> {
+    pub fn into_row<'b>(
+        self,
+        relation: &'b Relation,
+    ) -> Result<HashMap<&'b str, PgValue<'a>>, DecoderError> {
         Ok(self
             .cols
             .into_iter()
             .zip(relation.fields.iter())
-            .map(|(d, r)| d.to_pg_value(&r).map(|pg| (r.name.clone(), pg)))
+            .map(|(d, r)| d.to_pg_value(&r).map(|pg| (r.name.as_str(), pg)))
             .collect::<Result<HashMap<_, _>, _>>()?)
     }
 
-    pub fn into_keys(self, relation: &Relation) -> Result<Vec<PgValue>, DecoderError> {
+    pub fn into_keys(self, relation: &Relation) -> Result<Vec<PgValue<'a>>, DecoderError> {
         Ok(self
             .cols
             .into_iter()
@@ -58,14 +61,14 @@ impl TupleData {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum TupleCol {
+pub enum TupleCol<'a> {
     Null,
     Toasted,
-    Text(String),
+    Text(&'a str),
     Bytes(Bytes),
 }
 
-impl TupleCol {
+impl<'a> TupleCol<'a> {
     fn parse(data: &[u8]) -> Result<TupleCol, DecoderError> {
         match data[0] {
             b'n' => Ok(TupleCol::Null),
@@ -82,7 +85,7 @@ impl TupleCol {
                     return Err(DecoderError::TruncatedInput);
                 }
 
-                Ok(TupleCol::Text(str::from_utf8(&data[5..5 + l])?.to_string()))
+                Ok(TupleCol::Text(str::from_utf8(&data[5..5 + l])?))
             }
             b'b' => {
                 let l = u32::from_be_bytes(
@@ -103,7 +106,7 @@ impl TupleCol {
             TupleCol::Bytes(b) => b.len(),
             TupleCol::Text(t) => {
                 if !t.is_empty() {
-                    t.len() + 1
+                    t.len()
                 } else {
                     0
                 }
@@ -114,7 +117,7 @@ impl TupleCol {
         4 + inner
     }
 
-    fn to_pg_value(self, rel_field: &Field) -> Result<PgValue, DecoderError> {
+    fn to_pg_value(self, rel_field: &Field) -> Result<PgValue<'a>, DecoderError> {
         match self {
             TupleCol::Null => todo!(),
             TupleCol::Toasted => todo!(),
@@ -130,7 +133,7 @@ impl TupleCol {
         }
     }
 
-    fn to_pg_value_kf(self, rel_field: &KeyField) -> Result<PgValue, DecoderError> {
+    fn to_pg_value_kf(self, rel_field: &KeyField) -> Result<PgValue<'a>, DecoderError> {
         match self {
             TupleCol::Null => todo!(),
             TupleCol::Toasted => todo!(),
@@ -200,6 +203,6 @@ mod test {
             cols: vec![col_byte_one(), col_text_hello()],
         };
 
-        assert_eq!(tuple_data, Ok((tuple_data_manual, 22)));
+        assert_eq!(tuple_data, Ok((tuple_data_manual, 21)));
     }
 }

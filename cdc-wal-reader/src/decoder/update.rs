@@ -8,10 +8,10 @@ use crate::decoder::{
     relation::Relation,
 };
 
-pub fn parse(
-    data: bytes::Bytes,
-    relation_map: &HashMap<u32, Relation>,
-) -> Result<ChangeEvent, DecoderError> {
+pub fn parse<'a, 'b>(
+    data: &'a bytes::Bytes,
+    relation_map: &'b HashMap<u32, Relation>,
+) -> Result<ChangeEvent<'a, 'b>, DecoderError> {
     let id = u32::from_be_bytes(
         data[0..4]
             .try_into()
@@ -33,7 +33,7 @@ pub fn parse(
 
     Ok(ChangeEvent {
         op: cdc_avro::Op::Update { key, row: new_data },
-        table: relation.relname.clone(),
+        table: &relation.relname,
     })
 }
 
@@ -70,21 +70,18 @@ mod test {
 
         let relation_map = common::get_example_rel_map();
 
-        let event = parse(data, &relation_map);
+        let event = parse(&data, &relation_map);
 
         let mut row = HashMap::new();
-        row.insert("id".to_string(), cdc_avro::PgValue::Int4(1));
-        row.insert(
-            "name".to_string(),
-            cdc_avro::PgValue::Text("hello".to_string()),
-        );
+        row.insert("id", cdc_avro::PgValue::Int4(1));
+        row.insert("name", cdc_avro::PgValue::Text("hello"));
 
         let event_example = ChangeEvent {
             op: cdc_avro::Op::Update {
                 key: cdc_avro::OverrideData::Key(vec![PgValue::Int4(1)]),
                 row,
             },
-            table: "users".to_string(),
+            table: "users",
         };
 
         assert_eq!(event, Ok(event_example));
@@ -113,25 +110,22 @@ mod test {
 
         let relation_map = common::get_example_rel_map();
 
-        let event = parse(data, &relation_map);
+        let event = parse(&data, &relation_map);
 
         let mut old_row = HashMap::new();
-        old_row.insert("id".to_string(), PgValue::Int4(1));
-        old_row.insert("name".to_string(), PgValue::Text("hello".to_string()));
+        old_row.insert("id", PgValue::Int4(1));
+        old_row.insert("name", PgValue::Text("hello"));
 
         let mut row = HashMap::new();
-        row.insert("id".to_string(), PgValue::Int4(1));
-        row.insert(
-            "name".to_string(),
-            cdc_avro::PgValue::Text("hello".to_string()),
-        );
+        row.insert("id", PgValue::Int4(1));
+        row.insert("name", cdc_avro::PgValue::Text("hello"));
 
         let event_example = ChangeEvent {
             op: cdc_avro::Op::Update {
                 key: cdc_avro::OverrideData::Row(old_row),
                 row,
             },
-            table: "users".to_string(),
+            table: "users",
         };
 
         assert_eq!(event, Ok(event_example));

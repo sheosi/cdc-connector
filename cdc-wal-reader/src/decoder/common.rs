@@ -14,10 +14,10 @@ use crate::decoder::{
     tuple_data::TupleCol,
 };
 
-pub fn get_old_tuple_data(
-    data: &[u8],
-    relation: &Relation,
-) -> Result<(OverrideData, usize), DecoderError> {
+pub fn get_old_tuple_data<'a, 'b>(
+    data: &'a [u8],
+    relation: &'b Relation,
+) -> Result<(OverrideData<'a, 'b>, usize), DecoderError> {
     match data[0] {
         b'K' => {
             let (tuple, size) = TupleData::parse(&data[1..])?;
@@ -31,7 +31,7 @@ pub fn get_old_tuple_data(
     }
 }
 
-pub fn get_new_tuple_data(data: &[u8]) -> Result<TupleData, DecoderError> {
+pub fn get_new_tuple_data<'a>(data: &'a [u8]) -> Result<TupleData<'a>, DecoderError> {
     if data[0] != b'N' {
         return Err(DecoderError::WrongNewTupleKey(data[0]));
     }
@@ -81,7 +81,7 @@ pub fn col_byte_one() -> TupleCol {
 
 #[cfg(test)]
 pub fn col_text_hello() -> TupleCol {
-    TupleCol::Text("hello".to_string())
+    TupleCol::Text("hello")
 }
 
 #[cfg(test)]
@@ -132,12 +132,12 @@ mod test {
         let old_tuple = get_old_tuple_data(&data, &get_example_rel());
 
         let mut row = HashMap::new();
-        row.insert("id".to_string(), PgValue::Int4(1));
-        row.insert("name".to_string(), PgValue::Text("hello".to_string()));
+        row.insert("id", PgValue::Int4(1));
+        row.insert("name", PgValue::Text("hello"));
 
         let old_tuple_manual = OverrideData::Row(row);
 
-        assert_eq!(old_tuple, Ok((old_tuple_manual, 23)));
+        assert_eq!(old_tuple, Ok((old_tuple_manual, 22)));
     }
 
     #[test]

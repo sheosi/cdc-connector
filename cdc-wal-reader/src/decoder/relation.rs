@@ -135,11 +135,6 @@ impl Field {
                 .map_err(|_| DecoderError::TruncatedInput)?,
         );
 
-        println!(
-            "data: {:?}, oid {}",
-            &data[after_name..after_name + 4],
-            t_oid
-        );
         let t_mod = u32::from_be_bytes(
             data[after_name + 4..after_name + 8]
                 .try_into()

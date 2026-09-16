@@ -8,15 +8,19 @@ use tokio_postgres::NoTls;
 
 use crate::decoder::DecoderError;
 
-mod decoder;
+// This has to be public for the benches to make use of it
+pub mod decoder;
 
-async fn send_to_producer<P>(event: Result<ChangeEvent, DecoderError>, producer: &P)
-where
+async fn send_to_producer<'a, 'b, P>(
+    event_res: Result<ChangeEvent<'a, 'b>, DecoderError>,
+    producer: &P,
+    lsn: i32,
+) where
     P: Producer,
 {
-    match event {
-        Ok(delete) => {
-            if let Err(e) = producer.send(delete).await {
+    match event_res {
+        Ok(event) => {
+            if let Err(e) = producer.send(event, lsn).await {
                 eprintln!("Producer had an error {}", e);
             }
         }
@@ -41,23 +45,33 @@ pub async fn start_wal_input<P: Producer>(
         match ev {
             ReplicationEvent::XLogData { wal_end, data, .. } => match data[0] {
                 b'R' => {
-                    println!("XLogData wal_end={} bytes={:?}", wal_end, &data);
                     if let Ok(relation) = decoder::relation::Relation::parse(data) {
                         println!("{:?}", &relation);
                         relation_map.insert(relation.relation_oid, relation);
                     }
                 }
+                b'B' => {
+                    println!("XLogData wal_end={} bytes={:?}", wal_end, &data);
+                    if let Ok(begin) = decoder::transactions::Begin::parse(data) {}
+                }
+                b'C' => {
+                    println!("XLogData wal_end={} bytes={:?}", wal_end, &data);
+                    if let Ok(begin) = decoder::transactions::Begin::parse(data) {}
+                }
                 b'I' => {
                     println!("XLogData wal_end={} bytes={:?}", wal_end, &data);
-                    send_to_producer(decoder::insert::parse(data, &relation_map), &producer).await;
+                    send_to_producer(decoder::insert::parse(&data, &relation_map), &producer, 0)
+                        .await;
                 }
                 b'D' => {
                     println!("Remove bytes={:?}", &data);
-                    send_to_producer(decoder::delete::parse(data, &relation_map), &producer).await;
+                    send_to_producer(decoder::delete::parse(&data, &relation_map), &producer, 0)
+                        .await;
                 }
                 b'U' => {
                     println!("Delete bytes={:?}", &data);
-                    send_to_producer(decoder::update::parse(data, &relation_map), &producer).await;
+                    send_to_producer(decoder::update::parse(&data, &relation_map), &producer, 0)
+                        .await;
                 }
                 _ => {
                     println!("XLogData wal_end={} bytes={:?}", wal_end, data);
@@ -65,6 +79,17 @@ pub async fn start_wal_input<P: Producer>(
             },
             ReplicationEvent::KeepAlive { .. } => {
                 // heartbeat; crate handles reply
+            }
+            ReplicationEvent::Message {
+                transactional,
+                lsn,
+                prefix,
+                content,
+            } => {
+                println!(
+                    "Got message: {} {} {} {:?}",
+                    transactional, lsn, prefix, content
+                );
             }
             ev => println!("other: {:?}", ev),
         }
@@ -123,5 +148,9 @@ async fn configure_replica_identity(
 }
 
 pub trait Producer: Send {
-    fn send(&self, event: ChangeEvent) -> impl std::future::Future<Output = Result<(), String>>;
+    fn send(
+        &self,
+        event: ChangeEvent,
+        lsn: i32,
+    ) -> impl std::future::Future<Output = Result<(), String>>;
 }
