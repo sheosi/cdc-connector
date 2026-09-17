@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use ahash::RandomState;
 use bumpalo::Bump;
 use cdc_avro::ChangeEvent;
 
@@ -11,7 +12,7 @@ use crate::decoder::{
 
 pub fn parse<'a, 'b>(
     data: &'a bytes::Bytes,
-    relation_map: &'b HashMap<u32, Relation>,
+    relation_map: &'b HashMap<u32, Relation, RandomState>,
     arena: &'a Bump,
 ) -> Result<ChangeEvent<'a, 'b>, DecoderError> {
     /*let id = u32::from_be_bytes(

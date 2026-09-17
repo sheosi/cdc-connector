@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use ahash::RandomState;
 use bumpalo::Bump;
 use cdc_avro::ChangeEvent;
 use pgwire_replication::{ReplicationClient, ReplicationEvent};
@@ -7,7 +8,7 @@ use pgwire_replication::{ReplicationClient, ReplicationEvent};
 pub use pgwire_replication::ReplicationConfig;
 use tokio_postgres::NoTls;
 
-use crate::decoder::DecoderError;
+use crate::decoder::{DecoderError, relation::Relation};
 
 // This has to be public for the benches to make use of it
 pub mod decoder;
@@ -40,7 +41,7 @@ pub async fn start_wal_input<P: Producer>(
         .await
         .unwrap();
     let mut client = ReplicationClient::connect(config).await?;
-    let mut relation_map = HashMap::new();
+    let mut relation_map = HashMap::<u32, Relation, RandomState>::default();
     let arena = Bump::with_capacity(1024);
 
     while let Some(ev) = client.recv().await? {

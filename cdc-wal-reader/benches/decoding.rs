@@ -7,8 +7,8 @@ use memchr::memchr;
 use simdutf8::basic::from_utf8 as simd_from_utf8;
 
 /*
- * According to those benchmarks, in the machine I tested, in 16bytes the scalar
- * wins while from 32bytes onwards the simd version wins (the simd price is amortized)
+ * According to those benchmarks, in the machine I tested, in 16 bytes the scalar
+ * wins while from 32 bytes onwards the simd version wins (the simd price is amortized)
  */
 
 fn parse_cstr(data: &[u8]) -> &str {

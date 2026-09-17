@@ -1,3 +1,4 @@
+use ahash::RandomState;
 use std::collections::HashMap;
 
 use bumpalo::Bump;
@@ -7,7 +8,7 @@ use crate::decoder::{DecoderError, common::get_new_tuple_data, relation::Relatio
 
 pub fn parse<'a, 'b>(
     data: &'a bytes::Bytes,
-    relation_map: &'b HashMap<u32, Relation>,
+    relation_map: &'b HashMap<u32, Relation, RandomState>,
     arena: &'a Bump,
 ) -> Result<ChangeEvent<'a, 'b>, DecoderError> {
     let relation_oid = u32::from_be_bytes(
@@ -32,6 +33,7 @@ pub fn parse<'a, 'b>(
 mod test {
     use std::collections::HashMap;
 
+    use ahash::RandomState;
     use bumpalo::Bump;
     use cdc_avro::{ChangeEvent, PgValue, RowEntry};
 
@@ -75,8 +77,8 @@ mod test {
         }
     }
 
-    fn complex_relation_map() -> HashMap<u32, Relation> {
-        let mut rel_map = HashMap::new();
+    fn complex_relation_map() -> HashMap<u32, Relation, RandomState> {
+        let mut rel_map = HashMap::default();
         rel_map.insert(16390, complex_relation());
         rel_map
     }

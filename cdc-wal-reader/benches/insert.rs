@@ -122,7 +122,7 @@ fn bench(c: &mut Criterion) {
     };
 
     let data = bytes::Bytes::from_static(&INSERT_DATA);
-    let mut rel_map = HashMap::new();
+    let mut rel_map = HashMap::default();
     rel_map.insert(12345, order_items_rel);
     let arena = Bump::with_capacity(2048);
 

@@ -1,8 +1,7 @@
-use std::{collections::HashMap, sync::LazyLock};
-
 use bumpalo::{Bump, collections::Vec};
 use serde::Serialize;
 use serde_avro_fast::Schema;
+use std::{collections::HashMap, sync::LazyLock};
 use thiserror::Error;
 
 #[derive(Serialize, Debug, Clone, PartialEq)]

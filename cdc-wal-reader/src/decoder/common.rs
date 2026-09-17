@@ -1,7 +1,6 @@
-use std::collections::HashMap;
-
 use bumpalo::Bump;
 use cdc_avro::OverrideData;
+use std::collections::HashMap;
 
 use crate::decoder::{
     DecoderError::{self, WrongOldTupleKey},
@@ -96,7 +95,7 @@ fn parse_scalar_simd(data: &[u8]) -> &str {
 }
 
 #[cfg(test)]
-pub fn get_example_rel_map() -> HashMap<u32, Relation> {
+pub fn get_example_rel_map() -> HashMap<u32, Relation, RandomState> {
     let mut relation_map = HashMap::new();
     relation_map.insert(1u32, get_example_rel());
 
