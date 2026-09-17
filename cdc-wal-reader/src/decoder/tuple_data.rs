@@ -25,12 +25,15 @@ pub fn parse<'a>(
         let (value, len) = parse_value(&data[last_pos..], &r)?;
 
         last_pos += len + 1;
+
         cols.push(RowEntry {
             key: &r.name,
             value,
         });
     }
 
+    // This is a little corrective measure, if the loop has run
+    // next_pos is one bigger than it should
     Ok((cols, last_pos))
 }
 
@@ -46,17 +49,19 @@ pub fn parse_keys<'a>(
             .map_err(|_| DecoderError::TruncatedInput)?,
     );
 
-    let mut last_pos = 2;
+    let mut next_pos = 2;
     let mut cols = Vec::with_capacity_in(n_cols as usize, arena);
 
     for (_, r) in (0..n_cols).zip(relation.fields.iter()) {
-        let (value, len) = parse_value(&data[last_pos..], &r)?;
+        let (value, len) = parse_value(&data[next_pos..], &r)?;
 
-        last_pos += len + 1;
+        next_pos += len + 1;
         cols.push(value);
     }
 
-    Ok((cols, last_pos))
+    // This is a little corrective measure, if the loop has run
+    // next_pos is one bigger than it should
+    Ok((cols, next_pos - ((n_cols > 0) as usize)))
 }
 
 fn parse_value<'a>(data: &'a [u8], field: &Field) -> Result<(PgValue<'a>, usize), DecoderError> {
@@ -104,7 +109,7 @@ fn parse_value<'a>(data: &'a [u8], field: &Field) -> Result<(PgValue<'a>, usize)
                 super::relation::FieldKind::Text => todo!(),
             };
 
-            Ok((bytes, final_l))
+            Ok((bytes, final_l - 1))
         }
         a => Err(DecoderError::WrongColTypeKey(a)),
     }
