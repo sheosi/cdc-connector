@@ -13,8 +13,8 @@ use crate::decoder::{DecoderError, relation::Relation};
 // This has to be public for the benches to make use of it
 pub mod decoder;
 
-async fn send_to_producer<'a, 'b, P>(
-    event_res: Result<ChangeEvent<'a, 'b>, DecoderError>,
+async fn send_to_producer<'a, P>(
+    event_res: Result<ChangeEvent<'a>, DecoderError>,
     producer: &P,
     lsn: i32,
 ) where
@@ -163,9 +163,9 @@ async fn configure_replica_identity(
 }
 
 pub trait Producer: Send {
-    fn send<'a, 'b>(
+    fn send<'a>(
         &self,
-        event: ChangeEvent<'a, 'b>,
+        event: ChangeEvent<'a>,
         lsn: i32,
     ) -> impl std::future::Future<Output = Result<(), String>>;
 }

@@ -11,11 +11,11 @@ use crate::decoder::{
 };
 
 /// Parse the bytes of a delete command, don't include the initial 'D' present
-pub fn parse<'a, 'b>(
+pub fn parse<'a>(
     data: &'a bytes::Bytes,
-    relation_map: &'b HashMap<u32, Relation, RandomState>,
+    relation_map: &'a HashMap<u32, Relation, RandomState>,
     arena: &'a Bump,
-) -> Result<ChangeEvent<'a, 'b>, DecoderError> {
+) -> Result<ChangeEvent<'a>, DecoderError> {
     /*let id = u32::from_be_bytes(
         data[0..4]
             .try_into()
@@ -94,13 +94,17 @@ mod test {
 
         let event = parse(&data, &relation_map, &arena);
 
-        let mut row = HashMap::new();
-        row.insert("id", PgValue::Int4(1));
-        row.insert("name", PgValue::Text("hello"));
-
         let event_example = ChangeEvent {
             op: cdc_avro::Op::Delete {
-                key: cdc_avro::OverrideData::Row(row),
+                key: cdc_avro::OverrideData::Row(vec![in &arena;
+                RowEntry {
+                    key: "id",
+                    value: PgValue::Int4(1),
+                },
+                RowEntry {
+                    key: "name",
+                    value: PgValue::Text("hello"),
+                },]),
             },
             table: "users",
         };

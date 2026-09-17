@@ -5,33 +5,33 @@ use std::sync::LazyLock;
 use thiserror::Error;
 
 #[derive(Serialize, Debug, Clone, PartialEq)]
-pub enum Op<'a, 'b> {
+pub enum Op<'a> {
     Insert {
         #[serde(borrow)]
-        row: Vec<'a, RowEntry<'a, 'b>>,
+        row: Vec<'a, RowEntry<'a>>,
     },
     Update {
-        key: OverrideData<'a, 'b>,
-        row: Vec<'a, RowEntry<'a, 'b>>,
+        key: OverrideData<'a>,
+        row: Vec<'a, RowEntry<'a>>,
     },
     Delete {
-        key: OverrideData<'a, 'b>,
+        key: OverrideData<'a>,
     },
 }
 
 #[derive(Serialize, Debug, Clone, PartialEq)]
-pub struct RowEntry<'a, 'b> {
-    pub key: &'b str,
+pub struct RowEntry<'a> {
+    pub key: &'a str,
     #[serde(borrow)]
     pub value: PgValue<'a>,
 }
 
 #[derive(Serialize, Debug, Clone, PartialEq)]
-pub enum OverrideData<'a, 'b> {
+pub enum OverrideData<'a> {
     #[serde(borrow)]
     Key(Vec<'a, PgValue<'a>>),
     #[serde(borrow)]
-    Row(Vec<'a, RowEntry<'a, 'b>>),
+    Row(Vec<'a, RowEntry<'a>>),
 }
 
 #[derive(Debug, Error)]
@@ -44,13 +44,13 @@ pub enum FromAvroError {
 }
 
 #[derive(Serialize, Debug, Clone, PartialEq)]
-pub struct ChangeEvent<'a, 'b> {
+pub struct ChangeEvent<'a> {
     #[serde(borrow)]
-    pub op: Op<'a, 'b>,
-    pub table: &'b str,
+    pub op: Op<'a>,
+    pub table: &'a str,
 }
 
-impl<'a: 'b, 'b> ChangeEvent<'a, 'b> {
+impl<'a> ChangeEvent<'a> {
     pub fn from_avro(slice: &'a [u8]) -> Result<Self, FromAvroError> {
         Err(FromAvroError::NoEvents)
         /*Ok(serde_avro_fast::from_datum_slice::<ChangeEvent>(

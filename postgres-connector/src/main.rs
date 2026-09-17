@@ -81,7 +81,7 @@ impl PostgresSink {
         })
     }
 
-    async fn perform_op<'a, 'b>(&mut self, event: ChangeEvent<'a, 'b>) -> Result<(), BridgeError> {
+    async fn perform_op<'a>(&mut self, event: ChangeEvent<'a>) -> Result<(), BridgeError> {
         match event.op {
             cdc_avro::Op::Insert { mut row } => {
                 let insert_stmt = self
@@ -163,7 +163,7 @@ impl PostgresSink {
 }
 
 impl KafkaSink for PostgresSink {
-    async fn on_event<'a, 'b>(&mut self, event: ChangeEvent<'a, 'b>) -> Result<(), String> {
+    async fn on_event<'a>(&mut self, event: ChangeEvent<'a>) -> Result<(), String> {
         self.perform_op(event).await.map_err(|e| e.to_string())?;
 
         Ok(())

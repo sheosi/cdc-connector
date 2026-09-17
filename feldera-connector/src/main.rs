@@ -38,13 +38,13 @@ pub struct FelderaConnector {
 }
 
 #[derive(Serialize)]
-enum FelderaEvent<'a, 'b> {
-    Insert(bumpalo::collections::Vec<'b, RowEntry<'a, 'b>>),
+enum FelderaEvent<'a> {
+    Insert(bumpalo::collections::Vec<'a, RowEntry<'a>>),
     Delete(HashMap<&'a str, PgValue<'a>>),
 }
 
-impl<'a, 'b> FelderaEvent<'a, 'b> {
-    fn convert_op_batches(batch: Vec<ChangeEvent<'a, 'b>>) -> Vec<FelderaEvent<'a, 'b>> {
+impl<'a> FelderaEvent<'a> {
+    fn convert_op_batches(batch: Vec<ChangeEvent<'a>>) -> Vec<FelderaEvent<'a>> {
         let mut result = Vec::with_capacity(batch.len());
 
         // TODO: How do we translate to ops?
@@ -86,10 +86,10 @@ impl FelderaConnector {
         Self { inner, pipeline }
     }
 
-    pub async fn insert_batch<'a, 'b>(
+    pub async fn insert_batch<'a>(
         &self,
         table: &str,
-        records: Vec<ChangeEvent<'a, 'b>>,
+        records: Vec<ChangeEvent<'a>>,
     ) -> Result<(), Error> {
         let json_str = FelderaEvent::to_lines(FelderaEvent::convert_op_batches(records))?;
 
@@ -107,7 +107,7 @@ impl FelderaConnector {
     }
 }
 impl KafkaSink for FelderaConnector {
-    async fn on_event<'a, 'b>(&mut self, event: ChangeEvent<'a, 'b>) -> Result<(), String> {
+    async fn on_event<'a>(&mut self, event: ChangeEvent<'a>) -> Result<(), String> {
         self.insert_batch(&event.table, vec![event])
             .await
             .map_err(|e| e.to_string())?;

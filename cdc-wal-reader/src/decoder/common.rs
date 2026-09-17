@@ -14,11 +14,11 @@ use crate::decoder::{
     tuple_data::TupleCol,
 };
 
-pub fn get_old_tuple_data<'a, 'b>(
+pub fn get_old_tuple_data<'a>(
     data: &'a [u8],
-    relation: &'b Relation,
+    relation: &'a Relation,
     arena: &'a Bump,
-) -> Result<(OverrideData<'a, 'b>, usize), DecoderError> {
+) -> Result<(OverrideData<'a>, usize), DecoderError> {
     match data[0] {
         b'K' => {
             let (tuple, size) = TupleData::parse(&data[1..], arena)?;
@@ -38,11 +38,11 @@ pub fn get_old_tuple_data<'a, 'b>(
     }
 }
 
-pub fn get_new_tuple_data<'a, 'b>(
+pub fn get_new_tuple_data<'a>(
     data: &'a [u8],
     arena: &'a Bump,
-    relation: &'b Relation,
-) -> Result<bumpalo::collections::Vec<'a, RowEntry<'a, 'b>>, DecoderError> {
+    relation: &'a Relation,
+) -> Result<bumpalo::collections::Vec<'a, RowEntry<'a>>, DecoderError> {
     if data[0] != b'N' {
         return Err(DecoderError::WrongNewTupleKey(data[0]));
     }

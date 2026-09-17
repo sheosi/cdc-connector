@@ -14,11 +14,11 @@ pub struct TupleData<'a> {
     pub(crate) cols: Vec<'a, TupleCol<'a>>,
 }
 
-pub fn parse<'a, 'b>(
+pub fn parse<'a>(
     data: &'a [u8],
     arena: &'a Bump,
-    relation: &'b Relation,
-) -> Result<(Vec<'a, RowEntry<'a, 'b>>, usize), DecoderError> {
+    relation: &'a Relation,
+) -> Result<(Vec<'a, RowEntry<'a>>, usize), DecoderError> {
     // Network byte order is be
     let n_cols = u16::from_be_bytes(
         data[0..2]
@@ -67,11 +67,11 @@ impl<'a> TupleData<'a> {
         Ok((TupleData { cols }, last_pos))
     }
 
-    pub fn into_row<'b>(
+    pub fn into_row(
         self,
-        relation: &'b Relation,
+        relation: &'a Relation,
         arena: &'a Bump,
-    ) -> Result<Vec<'a, RowEntry<'a, 'b>>, DecoderError> {
+    ) -> Result<Vec<'a, RowEntry<'a>>, DecoderError> {
         Ok(self
             .cols
             .into_iter()

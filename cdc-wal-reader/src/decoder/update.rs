@@ -10,11 +10,11 @@ use crate::decoder::{
     relation::Relation,
 };
 
-pub fn parse<'a, 'b>(
+pub fn parse<'a>(
     data: &'a bytes::Bytes,
-    relation_map: &'b HashMap<u32, Relation, RandomState>,
+    relation_map: &'a HashMap<u32, Relation, RandomState>,
     arena: &'a Bump,
-) -> Result<ChangeEvent<'a, 'b>, DecoderError> {
+) -> Result<ChangeEvent<'a>, DecoderError> {
     /*let id = u32::from_be_bytes(
         data[0..4]
             .try_into()
