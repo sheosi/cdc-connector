@@ -28,8 +28,8 @@ impl<'a> TupleData<'a> {
 
         for _ in 0..n_cols {
             match TupleCol::parse(&data[last_pos..]) {
-                Ok(col) => {
-                    last_pos += col.byte_size() + 1;
+                Ok((col, len)) => {
+                    last_pos += len + 1;
                     cols.push(col);
                 }
                 Err(e) => return Err(e),
@@ -80,10 +80,10 @@ pub enum TupleCol<'a> {
 }
 
 impl<'a> TupleCol<'a> {
-    fn parse(data: &'a [u8]) -> Result<TupleCol<'a>, DecoderError> {
+    fn parse(data: &'a [u8]) -> Result<(TupleCol<'a>, usize), DecoderError> {
         match data[0] {
-            b'n' => Ok(TupleCol::Null),
-            b'u' => Ok(TupleCol::Toasted),
+            b'n' => Ok((TupleCol::Null, 1)),
+            b'u' => Ok((TupleCol::Toasted, 1)),
             b't' => {
                 // Here's be because we are using network endianness (always big endian)
                 let l = u32::from_be_bytes(
@@ -96,34 +96,24 @@ impl<'a> TupleCol<'a> {
                     return Err(DecoderError::TruncatedInput);
                 }
 
-                Ok(TupleCol::Text(simdutf8::basic::from_utf8(&data[5..5 + l])?))
+                let final_l = 5 + l;
+                let text = TupleCol::Text(simdutf8::basic::from_utf8(&data[5..final_l])?);
+                Ok((text, final_l))
             }
             b'b' => {
                 let l = u32::from_be_bytes(
                     data[1..5]
                         .try_into()
                         .map_err(|_| DecoderError::TruncatedInput)?,
-                );
-                Ok(TupleCol::Bytes(&data[5..5 + (l as usize)]))
+                ) as usize;
+
+                let final_l = 5 + l;
+                let bytes = TupleCol::Bytes(&data[5..final_l]);
+
+                Ok((bytes, final_l))
             }
             a => Err(DecoderError::WrongColTypeKey(a)),
         }
-    }
-
-    fn byte_size(&self) -> usize {
-        let inner = match self {
-            TupleCol::Bytes(b) => b.len(),
-            TupleCol::Text(t) => {
-                if !t.is_empty() {
-                    t.len()
-                } else {
-                    0
-                }
-            }
-            _ => 0,
-        };
-
-        4 + inner
     }
 
     fn to_pg_value(self, rel_field: &Field) -> Result<PgValue<'a>, DecoderError> {
@@ -202,7 +192,7 @@ mod test {
 
         let tuple_col = TupleCol::parse(&data);
 
-        assert_eq!(tuple_col, Ok(col_text_hello()));
+        assert_eq!(tuple_col, Ok((col_text_hello(), 10)));
     }
 
     #[test]
