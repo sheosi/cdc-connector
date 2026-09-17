@@ -117,16 +117,13 @@ impl PostgresSink {
                     .await
                     .unwrap();
 
+                let email = ToSqlWrapper(row.pop().unwrap().value);
+                let name = ToSqlWrapper(row.pop().unwrap().value);
+                let id = ToSqlWrapper(row.pop().unwrap().value);
+
                 if let Err(e) = self
                     .client
-                    .execute(
-                        &update_stmt,
-                        &[
-                            &ToSqlWrapper(row.remove("id").unwrap()),
-                            &ToSqlWrapper(row.remove("name").unwrap()),
-                            &ToSqlWrapper(row.remove("user").unwrap()),
-                        ],
-                    )
+                    .execute(&update_stmt, &[&id, &name, &email])
                     .await
                 {
                     eprintln!("{:?}", e);

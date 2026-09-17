@@ -33,7 +33,6 @@ pub fn parse<'a, 'b>(
     let (key, old_data_end) = get_old_tuple_data(&data[8..], &relation, &arena)?;
 
     let new_data = get_new_tuple_data(&data[old_data_end + 8..], &arena, &relation)?;
-    let new_data = HashMap::new();
 
     Ok(ChangeEvent {
         op: cdc_avro::Op::Update { key, row: new_data },
@@ -45,7 +44,7 @@ pub fn parse<'a, 'b>(
 mod test {
     use std::collections::HashMap;
 
-    use bumpalo::Bump;
+    use bumpalo::{Bump, collections::vec, vec};
     use cdc_avro::{ChangeEvent, PgValue};
 
     use crate::decoder::{
@@ -78,14 +77,19 @@ mod test {
 
         let event = parse(&data, &relation_map, &arena);
 
-        let mut row = HashMap::new();
-        row.insert("id", cdc_avro::PgValue::Int4(1));
-        row.insert("name", cdc_avro::PgValue::Text("hello"));
-
         let event_example = ChangeEvent {
             op: cdc_avro::Op::Update {
                 key: cdc_avro::OverrideData::Key(bumpalo::vec![in &b;PgValue::Int4(1)]),
-                row,
+                row: vec![in &arena;
+                    RowEntry {
+                        key: "id",
+                        value: cdc_avro::PgValue::Int4(1),
+                    },
+                    RowEntry {
+                        key: "name",
+                        value: cdc_avro::PgValue::Text("hello"),
+                    },
+                ],
             },
             table: "users",
         };
@@ -120,18 +124,28 @@ mod test {
 
         let event = parse(&data, &relation_map, &arena);
 
-        let mut old_row = HashMap::new();
-        old_row.insert("id", PgValue::Int4(1));
-        old_row.insert("name", PgValue::Text("hello"));
-
-        let mut row = HashMap::new();
-        row.insert("id", PgValue::Int4(1));
-        row.insert("name", cdc_avro::PgValue::Text("hello"));
-
         let event_example = ChangeEvent {
             op: cdc_avro::Op::Update {
-                key: cdc_avro::OverrideData::Row(old_row),
-                row,
+                key: cdc_avro::OverrideData::Row(vec![ in &arena;
+                    RowEntry {
+                        key: "id",
+                        value: cdc_avro::PgValue::Int4(1),
+                    },
+                    RowEntry {
+                        key: "name",
+                        value: cdc_avro::PgValue::Text("hello"),
+                    },
+                ]),
+                row: vec![ in &arena;
+                    RowEntry {
+                        key: "id",
+                        value: cdc_avro::PgValue::Int4(1),
+                    },
+                    RowEntry {
+                        key: "name",
+                        value: cdc_avro::PgValue::Text("hello"),
+                    },
+                ],
             },
             table: "users",
         };

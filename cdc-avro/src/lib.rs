@@ -1,18 +1,18 @@
-use bumpalo::{Bump, collections::Vec};
+use bumpalo::collections::Vec;
 use serde::Serialize;
 use serde_avro_fast::Schema;
-use std::{collections::HashMap, sync::LazyLock};
+use std::sync::LazyLock;
 use thiserror::Error;
 
 #[derive(Serialize, Debug, Clone, PartialEq)]
 pub enum Op<'a, 'b> {
     Insert {
         #[serde(borrow)]
-        row: bumpalo::collections::Vec<'a, RowEntry<'a, 'b>>,
+        row: Vec<'a, RowEntry<'a, 'b>>,
     },
     Update {
         key: OverrideData<'a, 'b>,
-        row: HashMap<&'b str, PgValue<'a>>,
+        row: Vec<'a, RowEntry<'a, 'b>>,
     },
     Delete {
         key: OverrideData<'a, 'b>,
@@ -31,7 +31,7 @@ pub enum OverrideData<'a, 'b> {
     #[serde(borrow)]
     Key(Vec<'a, PgValue<'a>>),
     #[serde(borrow)]
-    Row(HashMap<&'b str, PgValue<'a>>),
+    Row(Vec<'a, RowEntry<'a, 'b>>),
 }
 
 #[derive(Debug, Error)]
@@ -67,7 +67,7 @@ impl<'a: 'b, 'b> ChangeEvent<'a, 'b> {
     }
 }
 
-const CHANGE_EVENT_SCHEMA_STR: &str = r#"{"name": "row", "type": {"type": "array", "items": {"type": "record", "name": "RowEntry", "fields": [{"name": "key", "type": "string"}, {"name": "value", "type": ["Text", "Int4"]}]}}}"#;
+const CHANGE_EVENT_SCHEMA_STR: &str = r#"{"type":"record","name":"ChangeEvent","fields":[{"name":"op","type":[{"type":"record","name":"Insert","fields":[{"name":"row","type":{"type":"array","items":{"type":"record","name":"RowEntry","fields":[{"name":"key","type":"string"},{"name":"value","type":[{"type":"record","name":"Text","fields":[{"name":"Text","type":"string"}]},{"type":"record","name":"Int4","fields":[{"name":"Int4","type":"long"}]}]}]}}}]},{"type":"record","name":"Update","fields":[{"name":"key","type":[{"type":"record","name":"Key","fields":[{"name":"Key","type":{"type":"array","items":["Text","Int4"]}}]},{"type":"record","name":"Row","fields":[{"name":"Row","type":{"type":"array","items":"RowEntry"}}]}]},{"name":"row","type":{"type":"array","items":"RowEntry"}}]},{"type":"record","name":"Delete","fields":[{"name":"key","type":["Key","Row"]}]}]},{"name":"table","type":"string"}]}"#;
 
 const CHANGE_EVENT_SCHEMA: LazyLock<Schema> = LazyLock::new(|| {
     CHANGE_EVENT_SCHEMA_STR

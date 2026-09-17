@@ -1,6 +1,5 @@
 use bumpalo::Bump;
 use cdc_avro::{OverrideData, RowEntry};
-use std::collections::HashMap;
 
 use crate::decoder::{
     DecoderError::{self, WrongOldTupleKey},
@@ -30,8 +29,10 @@ pub fn get_old_tuple_data<'a, 'b>(
         }
         b'O' => {
             let (tuple, size) = TupleData::parse(&data[1..], arena)?;
-            //Ok((OverrideData::Row(tuple.into_row(relation)?), size + 1))
-            Ok((OverrideData::Row(HashMap::new()), size + 1))
+            Ok((
+                OverrideData::Row(tuple.into_row(relation, arena)?),
+                size + 1,
+            ))
         }
         a => Err(WrongOldTupleKey(a)),
     }
@@ -141,9 +142,7 @@ pub fn col_text_hello() -> TupleCol {
 
 #[cfg(test)]
 mod test {
-    use std::collections::HashMap;
-
-    use bumpalo::vec;
+    use bumpalo::{Bump, vec};
     use cdc_avro::{OverrideData, PgValue};
 
     use crate::decoder::{
@@ -157,8 +156,10 @@ mod test {
     fn empty_old_tuple_data_key() {
         let data = [b'O', 0, 0];
 
+        let arena = Bump::new();
+
         let old_tuple = get_old_tuple_data(&data, &get_example_rel(), &arena);
-        let old_tuple_manual = OverrideData::Row(HashMap::new());
+        let old_tuple_manual = OverrideData::Row(vec![in &arena]);
 
         assert_eq!(old_tuple, Ok((old_tuple_manual, 3)));
     }

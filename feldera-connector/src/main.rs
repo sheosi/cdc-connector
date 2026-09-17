@@ -108,9 +108,9 @@ impl FelderaConnector {
 }
 impl KafkaSink for FelderaConnector {
     async fn on_event<'a, 'b>(&mut self, event: ChangeEvent<'a, 'b>) -> Result<(), String> {
-        self.insert_batch(&event.table.clone(), vec![event])
+        self.insert_batch(&event.table, vec![event])
             .await
-            .map_err(|e| e.to_string());
+            .map_err(|e| e.to_string())?;
 
         Ok(())
     }
