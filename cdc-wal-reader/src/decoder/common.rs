@@ -6,15 +6,12 @@ use cdc_avro::{OverrideData, RowEntry};
 use crate::decoder::{
     DecoderError::{self, WrongOldTupleKey},
     relation::Relation,
-    tuple_data::{self, TupleData},
+    tuple_data,
 };
 use simdutf8::basic::from_utf8 as simd_from_utf8;
 
 #[cfg(test)]
-use crate::decoder::{
-    relation::{Field, FieldKind, KeyField},
-    tuple_data::TupleCol,
-};
+use crate::decoder::relation::{Field, FieldKind, KeyField};
 
 pub fn get_old_tuple_data<'a>(
     data: &'a [u8],
@@ -23,18 +20,12 @@ pub fn get_old_tuple_data<'a>(
 ) -> Result<(OverrideData<'a>, usize), DecoderError> {
     match data[0] {
         b'K' => {
-            let (tuple, size) = TupleData::parse(&data[1..], arena)?;
-            Ok((
-                OverrideData::Key(tuple.into_keys(relation, arena)?),
-                size + 1,
-            ))
+            let (keys, size) = tuple_data::parse_keys(&data[1..], arena, relation)?;
+            Ok((OverrideData::Key(keys), size + 1))
         }
         b'O' => {
-            let (tuple, size) = TupleData::parse(&data[1..], arena)?;
-            Ok((
-                OverrideData::Row(tuple.into_row(relation, arena)?),
-                size + 1,
-            ))
+            let (row, size) = tuple_data::parse(&data[1..], arena, relation)?;
+            Ok((OverrideData::Row(row), size + 1))
         }
         a => Err(WrongOldTupleKey(a)),
     }
@@ -133,13 +124,19 @@ pub fn get_example_rel() -> Relation {
 }
 
 #[cfg(test)]
-pub fn col_byte_one<'a>() -> TupleCol<'a> {
-    TupleCol::Bytes(&[0, 0, 0, 1])
+pub fn col_byte_id<'a>() -> RowEntry<'a> {
+    RowEntry {
+        key: "id",
+        value: cdc_avro::PgValue::Int4(1),
+    }
 }
 
 #[cfg(test)]
-pub fn col_text_hello<'a>() -> TupleCol<'a> {
-    TupleCol::Text("hello")
+pub fn col_text_name<'a>() -> RowEntry<'a> {
+    RowEntry {
+        key: "name",
+        value: cdc_avro::PgValue::Text("hello"),
+    }
 }
 
 #[cfg(test)]
@@ -147,11 +144,8 @@ mod test {
     use bumpalo::{Bump, vec};
     use cdc_avro::{OverrideData, PgValue, RowEntry};
 
-    use crate::decoder::{
-        common::{
-            col_byte_one, col_text_hello, get_example_rel, get_new_tuple_data, get_old_tuple_data,
-        },
-        tuple_data::TupleData,
+    use crate::decoder::common::{
+        col_byte_id, col_text_name, get_example_rel, get_new_tuple_data, get_old_tuple_data,
     };
 
     #[test]
@@ -227,8 +221,8 @@ mod test {
         let new_tuple = get_new_tuple_data(&data, &arena, &example_rel);
         let new_tuple_manual = vec![
         in &arena;
-            RowEntry{key: "id", value: PgValue::Int4(1)},
-            RowEntry{key:"name", value:PgValue::Text("hello")}
+            col_byte_id(),
+            col_text_name()
         ];
 
         assert_eq!(new_tuple, Ok(new_tuple_manual));
