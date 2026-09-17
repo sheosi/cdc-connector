@@ -43,8 +43,8 @@ pub fn parse<'a>(
 mod test {
     use std::collections::HashMap;
 
-    use bumpalo::Bump;
-    use cdc_avro::{ChangeEvent, PgValue};
+    use bumpalo::{Bump, vec};
+    use cdc_avro::{ChangeEvent, PgValue, RowEntry};
 
     use crate::decoder::{common, delete::parse};
 

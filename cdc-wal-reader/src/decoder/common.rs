@@ -1,3 +1,5 @@
+#[cfg(test)]
+use ahash::RandomState;
 use bumpalo::Bump;
 use cdc_avro::{OverrideData, RowEntry};
 
@@ -97,8 +99,8 @@ fn parse_scalar_simd(data: &[u8]) -> &str {
 }
 
 #[cfg(test)]
-pub fn get_example_rel_map() -> HashMap<u32, Relation, RandomState> {
-    let mut relation_map = HashMap::new();
+pub fn get_example_rel_map() -> std::collections::HashMap<u32, Relation, RandomState> {
+    let mut relation_map = std::collections::HashMap::default();
     relation_map.insert(1u32, get_example_rel());
 
     relation_map
@@ -131,19 +133,19 @@ pub fn get_example_rel() -> Relation {
 }
 
 #[cfg(test)]
-pub fn col_byte_one() -> TupleCol {
+pub fn col_byte_one<'a>() -> TupleCol<'a> {
     TupleCol::Bytes(&[0, 0, 0, 1])
 }
 
 #[cfg(test)]
-pub fn col_text_hello() -> TupleCol {
+pub fn col_text_hello<'a>() -> TupleCol<'a> {
     TupleCol::Text("hello")
 }
 
 #[cfg(test)]
 mod test {
     use bumpalo::{Bump, vec};
-    use cdc_avro::{OverrideData, PgValue};
+    use cdc_avro::{OverrideData, PgValue, RowEntry};
 
     use crate::decoder::{
         common::{
@@ -158,7 +160,9 @@ mod test {
 
         let arena = Bump::new();
 
-        let old_tuple = get_old_tuple_data(&data, &get_example_rel(), &arena);
+        let example_rel = get_example_rel();
+
+        let old_tuple = get_old_tuple_data(&data, &example_rel, &arena);
         let old_tuple_manual = OverrideData::Row(vec![in &arena]);
 
         assert_eq!(old_tuple, Ok((old_tuple_manual, 3)));
@@ -170,7 +174,9 @@ mod test {
 
         let arena = Bump::new();
 
-        let key_tuple = get_old_tuple_data(&data, &get_example_rel(), &arena);
+        let example_rel = get_example_rel();
+
+        let key_tuple = get_old_tuple_data(&data, &example_rel, &arena);
         let key_tuple_manual = OverrideData::Key(vec![in &arena]);
 
         assert_eq!(key_tuple, Ok((key_tuple_manual, 3)));
@@ -188,13 +194,16 @@ mod test {
             b'h', b'e', b'l', b'l', b'o', // Text hello
         ];
 
-        let old_tuple = get_old_tuple_data(&data, &get_example_rel(), &arena);
+        let arena = Bump::new();
+        let example_rel = get_example_rel();
 
-        let mut row = HashMap::new();
-        row.insert("id", PgValue::Int4(1));
-        row.insert("name", PgValue::Text("hello"));
+        let old_tuple = get_old_tuple_data(&data, &example_rel, &arena);
 
-        let old_tuple_manual = OverrideData::Row(row);
+        let old_tuple_manual = OverrideData::Row(vec![
+        in &arena;
+            RowEntry{key: "id", value: PgValue::Int4(1)},
+            RowEntry{key:"name", value:PgValue::Text("hello")}
+        ]);
 
         assert_eq!(old_tuple, Ok((old_tuple_manual, 22)));
     }
@@ -213,8 +222,10 @@ mod test {
 
         let arena = Bump::new();
 
-        let new_tuple = get_new_tuple_data(&data, &arena, &get_example_rel());
-        let new_tuple_manual = bumpalo::vec![
+        let example_rel = get_example_rel();
+
+        let new_tuple = get_new_tuple_data(&data, &arena, &example_rel);
+        let new_tuple_manual = vec![
         in &arena;
             RowEntry{key: "id", value: PgValue::Int4(1)},
             RowEntry{key:"name", value:PgValue::Text("hello")}

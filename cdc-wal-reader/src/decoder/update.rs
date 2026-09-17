@@ -45,7 +45,7 @@ mod test {
     use std::collections::HashMap;
 
     use bumpalo::{Bump, collections::vec, vec};
-    use cdc_avro::{ChangeEvent, PgValue};
+    use cdc_avro::{ChangeEvent, PgValue, RowEntry};
 
     use crate::decoder::{
         common,
@@ -79,7 +79,7 @@ mod test {
 
         let event_example = ChangeEvent {
             op: cdc_avro::Op::Update {
-                key: cdc_avro::OverrideData::Key(bumpalo::vec![in &b;PgValue::Int4(1)]),
+                key: cdc_avro::OverrideData::Key(bumpalo::vec![in &arena;PgValue::Int4(1)]),
                 row: vec![in &arena;
                     RowEntry {
                         key: "id",

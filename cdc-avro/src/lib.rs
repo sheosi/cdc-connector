@@ -98,16 +98,21 @@ mod tests {
 
     use super::*;
 
+    use bumpalo::{Bump, vec};
+
     #[test]
     fn back_and_forth() {
+        let arena = Bump::with_capacity(1024);
+
         let event = ChangeEvent {
             op: Op::Insert {
-                row: vec!(RowEntry{"a",PgValue::Text("b")}),
+                row: vec![in &arena; RowEntry {
+                    key: "a",
+                    value: PgValue::Text("b"),
+                }],
             },
             table: "users",
         };
-
-        let arena = Bump::with_capacity(1024);
 
         let bytes = event.into_avro().unwrap();
 
@@ -115,17 +120,5 @@ mod tests {
         //let back = ChangeEvent::from_avro(&bytes).unwrap();
 
         //assert_eq!(event, back);
-    }
-}
-
-#[cfg(test)]
-mod schema_dump {
-    use super::CHANGE_EVENT_SCHEMA;
-    use serde_avro_fast::Schema;
-
-    #[test]
-    fn dump_parsed_schema() {
-        eprintln!("=== serde_avro_fast parsed schema ===");
-        eprintln!("{}", CHANGE_EVENT_SCHEMA.canonical_form());
     }
 }
