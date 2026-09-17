@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use bumpalo::Bump;
 use cdc_avro::ChangeEvent;
 
 use crate::decoder::{DecoderError, common::get_new_tuple_data, relation::Relation};
@@ -7,6 +8,7 @@ use crate::decoder::{DecoderError, common::get_new_tuple_data, relation::Relatio
 pub fn parse<'a, 'b>(
     data: &'a bytes::Bytes,
     relation_map: &'b HashMap<u32, Relation>,
+    arena: &'a Bump,
 ) -> Result<ChangeEvent<'a, 'b>, DecoderError> {
     let relation_oid = u32::from_be_bytes(
         data[1..5]
@@ -18,7 +20,7 @@ pub fn parse<'a, 'b>(
         .get(&relation_oid)
         .ok_or_else(|| DecoderError::UnknownRelation(relation_oid))?;
 
-    let row = get_new_tuple_data(&data[5..])?.into_row(&relation)?;
+    let row = get_new_tuple_data(&data[5..], arena)?.into_row(&relation, arena)?;
 
     Ok(ChangeEvent {
         op: cdc_avro::Op::Insert { row },
@@ -30,7 +32,8 @@ pub fn parse<'a, 'b>(
 mod test {
     use std::collections::HashMap;
 
-    use cdc_avro::{ChangeEvent, PgValue};
+    use bumpalo::Bump;
+    use cdc_avro::{ChangeEvent, PgValue, RowEntry};
 
     use crate::decoder::{
         common,
@@ -94,12 +97,19 @@ mod test {
 
         let relation_map = common::get_example_rel_map();
 
-        let event = parse(&data, &relation_map);
+        let arena = Bump::new();
+        let event = parse(&data, &relation_map, &arena);
 
-        let mut row = HashMap::new();
-
-        row.insert("id", PgValue::Int4(1));
-        row.insert("name", PgValue::Text("hello"));
+        let mut row = bumpalo::vec![in &arena;
+            RowEntry {
+                key: "id",
+                value: PgValue::Int4(1),
+            },
+            RowEntry {
+                key: "name",
+                value: PgValue::Text("hello"),
+            },
+        ];
 
         let event_example = ChangeEvent {
             op: cdc_avro::Op::Insert { row },
@@ -118,14 +128,24 @@ mod test {
         ]);
 
         let relation_map = complex_relation_map();
+        let arena = Bump::new();
 
-        let event = parse(&data, &relation_map);
+        let event = parse(&data, &relation_map, &arena);
 
-        let mut row = HashMap::new();
-
-        row.insert("id", PgValue::Int4(1));
-        row.insert("name", PgValue::Text("ada"));
-        row.insert("email", PgValue::Text("ada@example.com"));
+        let mut row = bumpalo::vec![in &arena;
+            RowEntry {
+                key: "id",
+                value: PgValue::Int4(1),
+            },
+            RowEntry {
+                key: "name",
+                value: PgValue::Text("ada"),
+            },
+            RowEntry {
+                key: "email",
+                value: PgValue::Text("ada@example.com"),
+            },
+        ];
 
         let event_example = ChangeEvent {
             op: cdc_avro::Op::Insert { row },

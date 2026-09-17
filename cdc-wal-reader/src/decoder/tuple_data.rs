@@ -1,7 +1,8 @@
-use std::collections::HashMap;
-
-use bytes::Bytes;
-use cdc_avro::PgValue;
+use bumpalo::{
+    Bump,
+    collections::{CollectIn, Vec},
+};
+use cdc_avro::{PgValue, RowEntry};
 
 use crate::decoder::{
     DecoderError,
@@ -10,11 +11,11 @@ use crate::decoder::{
 
 #[derive(Debug, PartialEq)]
 pub struct TupleData<'a> {
-    pub(crate) cols: Vec<TupleCol<'a>>,
+    pub(crate) cols: Vec<'a, TupleCol<'a>>,
 }
 
 impl<'a> TupleData<'a> {
-    pub fn parse(data: &[u8]) -> Result<(TupleData, usize), DecoderError> {
+    pub fn parse(data: &'a [u8], arena: &'a Bump) -> Result<(TupleData<'a>, usize), DecoderError> {
         // Network byte order is be
         let n_cols = u16::from_be_bytes(
             data[0..2]
@@ -23,7 +24,7 @@ impl<'a> TupleData<'a> {
         );
 
         let mut last_pos = 2;
-        let mut cols = Vec::with_capacity(n_cols as usize);
+        let mut cols = Vec::with_capacity_in(n_cols as usize, arena);
 
         for _ in 0..n_cols {
             match TupleCol::parse(&data[last_pos..]) {
@@ -41,22 +42,32 @@ impl<'a> TupleData<'a> {
     pub fn into_row<'b>(
         self,
         relation: &'b Relation,
-    ) -> Result<HashMap<&'b str, PgValue<'a>>, DecoderError> {
+        arena: &'a Bump,
+    ) -> Result<Vec<'a, RowEntry<'a, 'b>>, DecoderError> {
         Ok(self
             .cols
             .into_iter()
             .zip(relation.fields.iter())
-            .map(|(d, r)| d.to_pg_value(&r).map(|pg| (r.name.as_str(), pg)))
-            .collect::<Result<HashMap<_, _>, _>>()?)
+            .map(|(d, r)| {
+                d.to_pg_value(&r).map(|pg| RowEntry {
+                    key: r.name.as_str(),
+                    value: pg,
+                })
+            })
+            .collect_in::<Result<Vec<'a, _>, _>>(arena)?)
     }
 
-    pub fn into_keys(self, relation: &Relation) -> Result<Vec<PgValue<'a>>, DecoderError> {
+    pub fn into_keys(
+        self,
+        relation: &Relation,
+        arena: &'a Bump,
+    ) -> Result<Vec<'a, PgValue<'a>>, DecoderError> {
         Ok(self
             .cols
             .into_iter()
             .zip(relation.key_fields.iter())
             .map(|(c, r)| c.to_pg_value_kf(r))
-            .collect::<Result<Vec<_>, _>>()?)
+            .collect_in::<Result<Vec<'a, _>, _>>(arena)?)
     }
 }
 
@@ -65,11 +76,11 @@ pub enum TupleCol<'a> {
     Null,
     Toasted,
     Text(&'a str),
-    Bytes(Bytes),
+    Bytes(&'a [u8]),
 }
 
 impl<'a> TupleCol<'a> {
-    fn parse(data: &[u8]) -> Result<TupleCol, DecoderError> {
+    fn parse(data: &'a [u8]) -> Result<TupleCol<'a>, DecoderError> {
         match data[0] {
             b'n' => Ok(TupleCol::Null),
             b'u' => Ok(TupleCol::Toasted),
@@ -85,7 +96,7 @@ impl<'a> TupleCol<'a> {
                     return Err(DecoderError::TruncatedInput);
                 }
 
-                Ok(TupleCol::Text(str::from_utf8(&data[5..5 + l])?))
+                Ok(TupleCol::Text(simdutf8::basic::from_utf8(&data[5..5 + l])?))
             }
             b'b' => {
                 let l = u32::from_be_bytes(
@@ -93,9 +104,7 @@ impl<'a> TupleCol<'a> {
                         .try_into()
                         .map_err(|_| DecoderError::TruncatedInput)?,
                 );
-                Ok(TupleCol::Bytes(Bytes::copy_from_slice(
-                    &data[5..5 + (l as usize)],
-                )))
+                Ok(TupleCol::Bytes(&data[5..5 + (l as usize)]))
             }
             a => Err(DecoderError::WrongColTypeKey(a)),
         }
@@ -152,6 +161,8 @@ impl<'a> TupleCol<'a> {
 
 #[cfg(test)]
 mod test {
+    use bumpalo::{Bump, vec};
+
     use crate::decoder::common::{
         col_byte_one, col_text_hello, get_new_tuple_data, get_old_tuple_data,
     };
@@ -161,8 +172,12 @@ mod test {
     fn empty_data() {
         let data = [0, 0];
 
-        let tuple_data = TupleData::parse(&data);
-        let tuple_data_manual = TupleData { cols: vec![] };
+        let arena = Bump::new();
+
+        let tuple_data = TupleData::parse(&data, &arena);
+        let tuple_data_manual = TupleData {
+            cols: vec![in &arena;],
+        };
 
         assert_eq!(tuple_data, Ok((tuple_data_manual, 2)));
     }
@@ -171,9 +186,11 @@ mod test {
     fn one_byte_data() {
         let data = [0, 1, b'b', 0, 0, 0, 4, 0, 0, 0, 1];
 
-        let tuple_data = TupleData::parse(&data);
+        let arena = Bump::new();
+
+        let tuple_data = TupleData::parse(&data, &arena);
         let tuple_data_manual = TupleData {
-            cols: vec![col_byte_one()],
+            cols: vec![in &arena; col_byte_one()],
         };
 
         assert_eq!(tuple_data, Ok((tuple_data_manual, 11)));
@@ -198,9 +215,11 @@ mod test {
             b'h', b'e', b'l', b'l', b'o', // Text: hello
         ];
 
-        let tuple_data = TupleData::parse(&data);
+        let arena = Bump::new();
+
+        let tuple_data = TupleData::parse(&data, &arena);
         let tuple_data_manual = TupleData {
-            cols: vec![col_byte_one(), col_text_hello()],
+            cols: vec![in &arena; col_byte_one(), col_text_hello()],
         };
 
         assert_eq!(tuple_data, Ok((tuple_data_manual, 21)));

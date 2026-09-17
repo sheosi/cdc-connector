@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use bumpalo::Bump;
 use cdc_avro::ChangeEvent;
 use pgwire_replication::{ReplicationClient, ReplicationEvent};
 
@@ -40,6 +41,7 @@ pub async fn start_wal_input<P: Producer>(
         .unwrap();
     let mut client = ReplicationClient::connect(config).await?;
     let mut relation_map = HashMap::new();
+    let arena = Bump::with_capacity(1024);
 
     while let Some(ev) = client.recv().await? {
         match ev {
@@ -60,18 +62,30 @@ pub async fn start_wal_input<P: Producer>(
                 }
                 b'I' => {
                     println!("XLogData wal_end={} bytes={:?}", wal_end, &data);
-                    send_to_producer(decoder::insert::parse(&data, &relation_map), &producer, 0)
-                        .await;
+                    send_to_producer(
+                        decoder::insert::parse(&data, &relation_map, &arena),
+                        &producer,
+                        0,
+                    )
+                    .await;
                 }
                 b'D' => {
                     println!("Remove bytes={:?}", &data);
-                    send_to_producer(decoder::delete::parse(&data, &relation_map), &producer, 0)
-                        .await;
+                    send_to_producer(
+                        decoder::delete::parse(&data, &relation_map, &arena),
+                        &producer,
+                        0,
+                    )
+                    .await;
                 }
                 b'U' => {
                     println!("Delete bytes={:?}", &data);
-                    send_to_producer(decoder::update::parse(&data, &relation_map), &producer, 0)
-                        .await;
+                    send_to_producer(
+                        decoder::update::parse(&data, &relation_map, &arena),
+                        &producer,
+                        0,
+                    )
+                    .await;
                 }
                 _ => {
                     println!("XLogData wal_end={} bytes={:?}", wal_end, data);
@@ -116,7 +130,7 @@ async fn configure_replica_identity(
     let pub_names: Vec<String> = config.publication.names().to_vec();
 
     let identity = if replica_identity_full {
-        "FULl"
+        "FULL"
     } else {
         "DEFAULT"
     };

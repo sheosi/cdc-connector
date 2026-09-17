@@ -2,6 +2,7 @@ use std::hint::black_box;
 use std::str;
 use std::{collections::HashMap, ffi::CStr};
 
+use bumpalo::Bump;
 use cdc_wal_reader::decoder;
 use criterion::{Criterion, criterion_group, criterion_main};
 use memchr::memchr;
@@ -123,12 +124,14 @@ fn bench(c: &mut Criterion) {
     let data = bytes::Bytes::from_static(&INSERT_DATA);
     let mut rel_map = HashMap::new();
     rel_map.insert(12345, order_items_rel);
+    let arena = Bump::with_capacity(2048);
 
     c.bench_function("normal", |b| {
         b.iter(|| {
             black_box(decoder::insert::parse(
                 black_box(&data),
                 black_box(&rel_map),
+                &arena,
             ))
         })
     });

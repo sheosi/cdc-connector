@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use bumpalo::Bump;
 use cdc_avro::ChangeEvent;
 
 use crate::decoder::{
@@ -12,12 +13,13 @@ use crate::decoder::{
 pub fn parse<'a, 'b>(
     data: &'a bytes::Bytes,
     relation_map: &'b HashMap<u32, Relation>,
+    arena: &'a Bump,
 ) -> Result<ChangeEvent<'a, 'b>, DecoderError> {
-    let id = u32::from_be_bytes(
+    /*let id = u32::from_be_bytes(
         data[0..4]
             .try_into()
             .map_err(|_| DecoderError::TruncatedInput)?,
-    );
+    );*/
     let relation_oid = u32::from_be_bytes(
         data[4..8]
             .try_into()
@@ -28,7 +30,7 @@ pub fn parse<'a, 'b>(
         .get(&relation_oid)
         .ok_or_else(|| DecoderError::UnknownRelation(relation_oid))?;
 
-    let (key, _) = get_old_tuple_data(&data[8..], relation)?;
+    let (key, _) = get_old_tuple_data(&data[8..], relation, arena)?;
 
     Ok(ChangeEvent {
         op: cdc_avro::Op::Delete { key },
@@ -40,6 +42,7 @@ pub fn parse<'a, 'b>(
 mod test {
     use std::collections::HashMap;
 
+    use bumpalo::Bump;
     use cdc_avro::{ChangeEvent, PgValue};
 
     use crate::decoder::{common, delete::parse};
@@ -56,12 +59,13 @@ mod test {
         ]);
 
         let relation_map = common::get_example_rel_map();
+        let arena = Bump::with_capacity(512);
 
-        let event = parse(&data, &relation_map);
+        let event = parse(&data, &relation_map, &arena);
 
         let event_example = ChangeEvent {
             op: cdc_avro::Op::Delete {
-                key: cdc_avro::OverrideData::Key(vec![PgValue::Int4(1)]),
+                key: cdc_avro::OverrideData::Key(bumpalo::vec![in &arena; PgValue::Int4(1)]),
             },
             table: "users",
         };
@@ -83,9 +87,11 @@ mod test {
             b'h', b'e', b'l', b'l', b'o', // Text hello
         ]);
 
+        let arena = Bump::new();
+
         let relation_map = common::get_example_rel_map();
 
-        let event = parse(&data, &relation_map);
+        let event = parse(&data, &relation_map, &arena);
 
         let mut row = HashMap::new();
         row.insert("id", PgValue::Int4(1));

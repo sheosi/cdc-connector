@@ -36,6 +36,9 @@ pub enum DecoderError {
     #[error("Wrong UTF-8 characters: {0}")]
     NonUtf8(#[from] Utf8Error),
 
+    #[error("Wrong UTF-8 characters: {0}")]
+    NonUtf8Simd(#[from] simdutf8::basic::Utf8Error),
+
     #[error("Unknown relation of event: {0}")]
     UnknownRelation(u32),
 

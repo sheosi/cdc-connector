@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use bumpalo::Bump;
 use cdc_avro::ChangeEvent;
 
 use crate::decoder::{
@@ -11,12 +12,13 @@ use crate::decoder::{
 pub fn parse<'a, 'b>(
     data: &'a bytes::Bytes,
     relation_map: &'b HashMap<u32, Relation>,
+    arena: &'a Bump,
 ) -> Result<ChangeEvent<'a, 'b>, DecoderError> {
-    let id = u32::from_be_bytes(
+    /*let id = u32::from_be_bytes(
         data[0..4]
             .try_into()
             .map_err(|_| DecoderError::TruncatedInput)?,
-    );
+    );*/
     let relation_oid = u32::from_be_bytes(
         data[4..8]
             .try_into()
@@ -27,9 +29,11 @@ pub fn parse<'a, 'b>(
         .get(&relation_oid)
         .ok_or_else(|| DecoderError::UnknownRelation(relation_oid))?;
 
-    let (key, old_data_end) = get_old_tuple_data(&data[8..], &relation)?;
+    let (key, old_data_end) = get_old_tuple_data(&data[8..], &relation, &arena)?;
 
-    let new_data = get_new_tuple_data(&data[old_data_end + 8..])?.into_row(&relation)?;
+    let new_data =
+        get_new_tuple_data(&data[old_data_end + 8..], &arena)?.into_row(&relation, arena)?;
+    let new_data = HashMap::new();
 
     Ok(ChangeEvent {
         op: cdc_avro::Op::Update { key, row: new_data },
@@ -41,6 +45,7 @@ pub fn parse<'a, 'b>(
 mod test {
     use std::collections::HashMap;
 
+    use bumpalo::Bump;
     use cdc_avro::{ChangeEvent, PgValue};
 
     use crate::decoder::{
@@ -69,8 +74,9 @@ mod test {
         ]);
 
         let relation_map = common::get_example_rel_map();
+        let arena = Bump::new();
 
-        let event = parse(&data, &relation_map);
+        let event = parse(&data, &relation_map, &arena);
 
         let mut row = HashMap::new();
         row.insert("id", cdc_avro::PgValue::Int4(1));
@@ -78,7 +84,7 @@ mod test {
 
         let event_example = ChangeEvent {
             op: cdc_avro::Op::Update {
-                key: cdc_avro::OverrideData::Key(vec![PgValue::Int4(1)]),
+                key: cdc_avro::OverrideData::Key(bumpalo::vec![in &b;PgValue::Int4(1)]),
                 row,
             },
             table: "users",
@@ -108,9 +114,11 @@ mod test {
             b'h', b'e', b'l', b'l', b'o', // Text hello
         ]);
 
+        let arena = Bump::with_capacity(1024);
+
         let relation_map = common::get_example_rel_map();
 
-        let event = parse(&data, &relation_map);
+        let event = parse(&data, &relation_map, &arena);
 
         let mut old_row = HashMap::new();
         old_row.insert("id", PgValue::Int4(1));
