@@ -59,14 +59,11 @@ impl<'a: 'b, 'b> ChangeEvent<'a, 'b> {
         )?)*/
     }
 
-    pub fn into_avro(
-        &self,
-        arena: &'b Bump,
-    ) -> Result<Vec<'b, u8>, serde_avro_fast::ser::SerError> {
+    pub fn into_avro(&self) -> Result<std::vec::Vec<u8>, serde_avro_fast::ser::SerError> {
         let schema = &CHANGE_EVENT_SCHEMA;
 
         let mut config = serde_avro_fast::ser::SerializerConfig::new(schema);
-        serde_avro_fast::to_datum(&self, Vec::with_capacity_in(256, arena), &mut config)
+        serde_avro_fast::to_datum(&self, std::vec::Vec::with_capacity(256), &mut config)
     }
 }
 
@@ -112,7 +109,7 @@ mod tests {
 
         let arena = Bump::with_capacity(1024);
 
-        let bytes = event.into_avro(&arena).unwrap();
+        let bytes = event.into_avro().unwrap();
 
         //Reader::new(std::io::Cursor::new(bytes))
         //let back = ChangeEvent::from_avro(&bytes).unwrap();

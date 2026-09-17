@@ -163,9 +163,9 @@ async fn configure_replica_identity(
 }
 
 pub trait Producer: Send {
-    fn send(
+    fn send<'a, 'b>(
         &self,
-        event: ChangeEvent,
+        event: ChangeEvent<'a, 'b>,
         lsn: i32,
     ) -> impl std::future::Future<Output = Result<(), String>>;
 }

@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use cdc_avro::ChangeEvent;
 use cdc_avro::PgValue;
+use cdc_avro::RowEntry;
 use cdc_sink::KafkaConfig;
 use cdc_sink::KafkaSink;
 use config::Config;
@@ -37,13 +38,13 @@ pub struct FelderaConnector {
 }
 
 #[derive(Serialize)]
-enum FelderaEvent {
-    Insert(HashMap<String, PgValue>),
-    Delete(HashMap<String, PgValue>),
+enum FelderaEvent<'a, 'b> {
+    Insert(bumpalo::collections::Vec<'b, RowEntry<'a, 'b>>),
+    Delete(HashMap<&'a str, PgValue<'a>>),
 }
 
-impl FelderaEvent {
-    fn convert_op_batches(batch: Vec<ChangeEvent>) -> Vec<FelderaEvent> {
+impl<'a, 'b> FelderaEvent<'a, 'b> {
+    fn convert_op_batches(batch: Vec<ChangeEvent<'a, 'b>>) -> Vec<FelderaEvent<'a, 'b>> {
         let mut result = Vec::with_capacity(batch.len());
 
         // TODO: How do we translate to ops?
@@ -55,7 +56,7 @@ impl FelderaEvent {
                     // TODO! Add delete data
 
                     //result.push(FelderaEvent::Delete());
-                    result.push(FelderaEvent::Insert(row));
+                    //result.push(FelderaEvent::Insert(row));
                 }
                 cdc_avro::Op::Delete { key } => { /*TODO: Add delete*//*result.push(FelderaEvent::Delete());*/
                 }
@@ -85,7 +86,11 @@ impl FelderaConnector {
         Self { inner, pipeline }
     }
 
-    pub async fn insert_batch(&self, table: &str, records: Vec<ChangeEvent>) -> Result<(), Error> {
+    pub async fn insert_batch<'a, 'b>(
+        &self,
+        table: &str,
+        records: Vec<ChangeEvent<'a, 'b>>,
+    ) -> Result<(), Error> {
         let json_str = FelderaEvent::to_lines(FelderaEvent::convert_op_batches(records))?;
 
         self.inner
@@ -102,7 +107,7 @@ impl FelderaConnector {
     }
 }
 impl KafkaSink for FelderaConnector {
-    async fn on_event(&mut self, event: ChangeEvent) -> Result<(), String> {
+    async fn on_event<'a, 'b>(&mut self, event: ChangeEvent<'a, 'b>) -> Result<(), String> {
         self.insert_batch(&event.table.clone(), vec![event])
             .await
             .map_err(|e| e.to_string());

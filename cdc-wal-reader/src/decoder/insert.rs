@@ -7,7 +7,7 @@ use cdc_avro::ChangeEvent;
 use crate::decoder::{DecoderError, common::get_new_tuple_data, relation::Relation};
 
 pub fn parse<'a, 'b>(
-    data: &'a bytes::Bytes,
+    data: &'a [u8],
     relation_map: &'b HashMap<u32, Relation, RandomState>,
     arena: &'a Bump,
 ) -> Result<ChangeEvent<'a, 'b>, DecoderError> {

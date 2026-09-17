@@ -598,6 +598,7 @@ name = "cdc-producer"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bumpalo",
  "cdc-avro",
  "cdc-wal-reader",
  "config",
@@ -1245,6 +1246,7 @@ checksum = "da7c62ceae207dd37ea5b845da6a0696c799f85e97da1ab5b7910be3c1c80223"
 name = "feldera-connector"
 version = "0.1.0"
 dependencies = [
+ "bumpalo",
  "cdc-avro",
  "cdc-sink",
  "config",

@@ -81,7 +81,7 @@ impl PostgresSink {
         })
     }
 
-    async fn perform_op(&mut self, event: ChangeEvent) -> Result<(), BridgeError> {
+    async fn perform_op<'a, 'b>(&mut self, event: ChangeEvent<'a, 'b>) -> Result<(), BridgeError> {
         match event.op {
             cdc_avro::Op::Insert { mut row } => {
                 let insert_stmt = self
@@ -89,23 +89,20 @@ impl PostgresSink {
                     .get(
                         &self.client,
                         &event.table,
-                        row.keys()
-                            .map(|s| s.as_str())
-                            .collect::<Vec<_>>()
-                            .as_slice(),
+                        row.iter().map(|e| e.key).collect::<Vec<_>>().as_slice(),
                     )
                     .await
                     .expect("Failed to generate insert statement");
+
+                let email = row.pop().unwrap().value;
+                let name = row.pop().unwrap().value;
+                let id = row.pop().unwrap().value;
 
                 if let Err(e) = self
                     .client
                     .execute(
                         &insert_stmt.stmt,
-                        &[
-                            &ToSqlWrapper(row.remove("id").unwrap()),
-                            &ToSqlWrapper(row.remove("name").unwrap()),
-                            &ToSqlWrapper(row.remove("email").unwrap()),
-                        ],
+                        &[&ToSqlWrapper(id), &ToSqlWrapper(name), &ToSqlWrapper(email)],
                     )
                     .await
                 {
@@ -169,17 +166,17 @@ impl PostgresSink {
 }
 
 impl KafkaSink for PostgresSink {
-    async fn on_event(&mut self, event: ChangeEvent) -> Result<(), String> {
-        self.perform_op(event).await.map_err(|e| e.to_string());
+    async fn on_event<'a, 'b>(&mut self, event: ChangeEvent<'a, 'b>) -> Result<(), String> {
+        self.perform_op(event).await.map_err(|e| e.to_string())?;
 
         Ok(())
     }
 }
 
 #[derive(Debug)]
-struct ToSqlWrapper(PgValue);
+struct ToSqlWrapper<'a>(PgValue<'a>);
 
-impl ToSql for ToSqlWrapper {
+impl<'a> ToSql for ToSqlWrapper<'a> {
     fn to_sql(
         &self,
         ty: &tokio_postgres::types::Type,

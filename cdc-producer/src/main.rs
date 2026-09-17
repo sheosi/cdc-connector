@@ -1,5 +1,6 @@
 use anyhow::Result;
 
+use bumpalo::Bump;
 use cdc_avro::ChangeEvent;
 use cdc_wal_reader::{Producer as CdcProducer, ReplicationConfig};
 use rdkafka::ClientConfig;
@@ -33,7 +34,7 @@ impl KafkaProducer {
 }
 
 impl CdcProducer for KafkaProducer {
-    async fn send(&self, event: ChangeEvent, lsn: i32) -> Result<(), String> {
+    async fn send<'a, 'b>(&self, event: ChangeEvent<'a, 'b>, lsn: i32) -> Result<(), String> {
         let payload = event.into_avro().map_err(|e| e.to_string())?;
         let lsn_payload = (0 as u32).to_be_bytes();
         let future_record = FutureRecord::to(&self.topic)

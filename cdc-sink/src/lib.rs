@@ -15,9 +15,9 @@ pub struct KafkaConfig {
 }
 
 pub trait KafkaSink {
-    fn on_event(
+    fn on_event<'a, 'b>(
         &mut self,
-        event: ChangeEvent,
+        event: ChangeEvent<'a, 'b>,
     ) -> impl std::future::Future<Output = Result<(), String>>;
 }
 
