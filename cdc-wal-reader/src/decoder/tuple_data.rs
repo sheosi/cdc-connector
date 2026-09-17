@@ -24,7 +24,7 @@ pub fn parse<'a>(
     for (_, r) in (0..n_cols).zip(relation.fields.iter()) {
         let (value, len) = parse_value(&data[last_pos..], &r)?;
 
-        last_pos += len + 1;
+        last_pos += len;
 
         cols.push(RowEntry {
             key: &r.name,
@@ -32,8 +32,6 @@ pub fn parse<'a>(
         });
     }
 
-    // This is a little corrective measure, if the loop has run
-    // next_pos is one bigger than it should
     Ok((cols, last_pos))
 }
 
@@ -55,13 +53,11 @@ pub fn parse_keys<'a>(
     for (_, r) in (0..n_cols).zip(relation.fields.iter()) {
         let (value, len) = parse_value(&data[next_pos..], &r)?;
 
-        next_pos += len + 1;
+        next_pos += len;
         cols.push(value);
     }
 
-    // This is a little corrective measure, if the loop has run
-    // next_pos is one bigger than it should
-    Ok((cols, next_pos - ((n_cols > 0) as usize)))
+    Ok((cols, next_pos))
 }
 
 fn parse_value<'a>(data: &'a [u8], field: &Field) -> Result<(PgValue<'a>, usize), DecoderError> {
@@ -109,7 +105,7 @@ fn parse_value<'a>(data: &'a [u8], field: &Field) -> Result<(PgValue<'a>, usize)
                 super::relation::FieldKind::Text => todo!(),
             };
 
-            Ok((bytes, final_l - 1))
+            Ok((bytes, final_l))
         }
         a => Err(DecoderError::WrongColTypeKey(a)),
     }

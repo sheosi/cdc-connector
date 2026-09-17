@@ -137,7 +137,7 @@ mod test {
         let mut row = bumpalo::vec![in &arena;
             RowEntry {
                 key: "id",
-                value: PgValue::Int4(1),
+                value: PgValue::Text("1"),
             },
             RowEntry {
                 key: "name",

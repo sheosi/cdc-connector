@@ -81,9 +81,9 @@ impl InsertStatement {
 
         for i in 0..rows.len() {
             if i < rows.len() - 1 {
-                write!(&mut stmt_str, "${},", i).expect("");
+                write!(&mut stmt_str, "${},", i + 1).expect("");
             } else {
-                write!(&mut stmt_str, "${}", i).expect("");
+                write!(&mut stmt_str, "${}", i + 1).expect("");
             }
         }
 
