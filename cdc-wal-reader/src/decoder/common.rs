@@ -1,11 +1,11 @@
 use bumpalo::Bump;
-use cdc_avro::OverrideData;
+use cdc_avro::{OverrideData, RowEntry};
 use std::collections::HashMap;
 
 use crate::decoder::{
     DecoderError::{self, WrongOldTupleKey},
     relation::Relation,
-    tuple_data::TupleData,
+    tuple_data::{self, TupleData},
 };
 use simdutf8::basic::from_utf8 as simd_from_utf8;
 
@@ -37,15 +37,16 @@ pub fn get_old_tuple_data<'a, 'b>(
     }
 }
 
-pub fn get_new_tuple_data<'a>(
+pub fn get_new_tuple_data<'a, 'b>(
     data: &'a [u8],
     arena: &'a Bump,
-) -> Result<TupleData<'a>, DecoderError> {
+    relation: &'b Relation,
+) -> Result<bumpalo::collections::Vec<'a, RowEntry<'a, 'b>>, DecoderError> {
     if data[0] != b'N' {
         return Err(DecoderError::WrongNewTupleKey(data[0]));
     }
 
-    let (tuple, _) = TupleData::parse(&data[1..], arena)?;
+    let (tuple, _) = tuple_data::parse(&data[1..], arena, relation)?;
     Ok(tuple)
 }
 
@@ -211,10 +212,12 @@ mod test {
 
         let arena = Bump::new();
 
-        let new_tuple = get_new_tuple_data(&data, &arena);
-        let new_tuple_manual = TupleData {
-            cols: vec![in &arena; col_byte_one(), col_text_hello()],
-        };
+        let new_tuple = get_new_tuple_data(&data, &arena, &get_example_rel());
+        let new_tuple_manual = bumpalo::vec![
+        in &arena;
+            RowEntry{key: "id", value: PgValue::Int4(1)},
+            RowEntry{key:"name", value:PgValue::Text("hello")}
+        ];
 
         assert_eq!(new_tuple, Ok(new_tuple_manual));
     }

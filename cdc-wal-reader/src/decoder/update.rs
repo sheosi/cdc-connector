@@ -32,8 +32,7 @@ pub fn parse<'a, 'b>(
 
     let (key, old_data_end) = get_old_tuple_data(&data[8..], &relation, &arena)?;
 
-    let new_data =
-        get_new_tuple_data(&data[old_data_end + 8..], &arena)?.into_row(&relation, arena)?;
+    let new_data = get_new_tuple_data(&data[old_data_end + 8..], &arena, &relation)?;
     let new_data = HashMap::new();
 
     Ok(ChangeEvent {

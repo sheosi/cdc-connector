@@ -21,7 +21,7 @@ pub fn parse<'a, 'b>(
         .get(&relation_oid)
         .ok_or_else(|| DecoderError::UnknownRelation(relation_oid))?;
 
-    let row = get_new_tuple_data(&data[5..], arena)?.into_row(&relation, arena)?;
+    let row = get_new_tuple_data(&data[5..], arena, &relation)?;
 
     Ok(ChangeEvent {
         op: cdc_avro::Op::Insert { row },
