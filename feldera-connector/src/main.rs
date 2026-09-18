@@ -1,10 +1,8 @@
 use std::collections::HashMap;
 
-use cdc_avro::ChangeEvent;
-use cdc_avro::PgValue;
-use cdc_avro::RowEntry;
-use cdc_sink::KafkaConfig;
-use cdc_sink::KafkaSink;
+use cdc_avro::{ChangeEvent, PgValue};
+use cdc_sink::TableNames;
+use cdc_sink::{KafkaConfig, KafkaSink};
 use config::Config;
 use feldera_rest_api::Client;
 use serde::Deserialize;
@@ -35,11 +33,12 @@ pub struct FelderaConfig {
 pub struct FelderaConnector {
     inner: Client,
     pipeline: String,
+    table_names: TableNames,
 }
 
 #[derive(Serialize)]
 enum FelderaEvent<'a> {
-    Insert(bumpalo::collections::Vec<'a, RowEntry<'a>>),
+    Insert(bumpalo::collections::Vec<'a, PgValue<'a>>),
     Delete(HashMap<&'a str, PgValue<'a>>),
 }
 
@@ -52,13 +51,13 @@ impl<'a> FelderaEvent<'a> {
         for op in batch.into_iter() {
             match op.op {
                 cdc_avro::Op::Insert { row } => result.push(FelderaEvent::Insert(row)),
-                cdc_avro::Op::Update { key, row } => {
+                cdc_avro::Op::Update { old_k, old, row } => {
                     // TODO! Add delete data
 
                     //result.push(FelderaEvent::Delete());
                     //result.push(FelderaEvent::Insert(row));
                 }
-                cdc_avro::Op::Delete { key } => { /*TODO: Add delete*//*result.push(FelderaEvent::Delete());*/
+                cdc_avro::Op::Delete { old_k, old } => { /*TODO: Add delete*//*result.push(FelderaEvent::Delete());*/
                 }
             }
         }
@@ -83,7 +82,11 @@ impl FelderaConnector {
     pub fn new(base_url: &str, pipeline: String) -> Self {
         let inner = Client::new(base_url, feldera_rest_api::RetryPolicy::default());
 
-        Self { inner, pipeline }
+        Self {
+            inner,
+            pipeline,
+            table_names: TableNames::new(),
+        }
     }
 
     pub async fn insert_batch<'a>(
@@ -108,7 +111,7 @@ impl FelderaConnector {
 }
 impl KafkaSink for FelderaConnector {
     async fn on_event<'a>(&mut self, event: ChangeEvent<'a>) -> Result<(), String> {
-        self.insert_batch(&event.table, vec![event])
+        self.insert_batch(self.table_names.get(event.rel).unwrap(), vec![event])
             .await
             .map_err(|e| e.to_string())?;
 

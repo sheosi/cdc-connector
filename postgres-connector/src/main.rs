@@ -1,5 +1,5 @@
 use cdc_avro::{ChangeEvent, PgValue};
-use cdc_sink::{KafkaConfig, KafkaSink};
+use cdc_sink::{KafkaConfig, KafkaSink, TableNames};
 use config::Config;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -66,6 +66,7 @@ pub struct PostgresSink {
     pk_cache: HashMap<String, Vec<String>>,
     insert_stmt_cache: InsertStatementCache,
     delete_stmt_cache: DeleteStatementCache,
+    table_names: TableNames,
 }
 
 impl PostgresSink {
@@ -78,6 +79,7 @@ impl PostgresSink {
             pk_cache: HashMap::new(),
             insert_stmt_cache: InsertStatementCache::new(),
             delete_stmt_cache: DeleteStatementCache::new(),
+            table_names: TableNames::new(),
         })
     }
 
@@ -88,15 +90,16 @@ impl PostgresSink {
                     .insert_stmt_cache
                     .get(
                         &self.client,
-                        &event.table,
-                        row.iter().map(|e| e.key).collect::<Vec<_>>().as_slice(),
+                        event.rel,
+                        &["id", "name", "email"],
+                        &self.table_names,
                     )
                     .await
                     .expect("Failed to generate insert statement");
 
-                let email = row.pop().unwrap().value;
-                let name = row.pop().unwrap().value;
-                let id = row.pop().unwrap().value;
+                let email = row.pop().unwrap();
+                let name = row.pop().unwrap();
+                let id = row.pop().unwrap();
 
                 if let Err(e) = self
                     .client
@@ -109,7 +112,11 @@ impl PostgresSink {
                     eprintln!("{:?}", e);
                 }
             }
-            cdc_avro::Op::Update { key, mut row } => {
+            cdc_avro::Op::Update {
+                old_k,
+                old,
+                mut row,
+            } => {
                 // TODO: how to process updates, should we upsert or not?
                 let update_stmt = self
                     .client
@@ -117,9 +124,9 @@ impl PostgresSink {
                     .await
                     .unwrap();
 
-                let email = ToSqlWrapper(row.pop().unwrap().value);
-                let name = ToSqlWrapper(row.pop().unwrap().value);
-                let id = ToSqlWrapper(row.pop().unwrap().value);
+                let email = ToSqlWrapper(row.pop().unwrap());
+                let name = ToSqlWrapper(row.pop().unwrap());
+                let id = ToSqlWrapper(row.pop().unwrap());
 
                 if let Err(e) = self
                     .client
@@ -129,18 +136,18 @@ impl PostgresSink {
                     eprintln!("{:?}", e);
                 }
             }
-            cdc_avro::Op::Delete { key } => {
+            cdc_avro::Op::Delete { old_k, old } => {
                 let delete_stmt = self
                     .delete_stmt_cache
-                    .get(&self.client, &event.table)
+                    .get(&self.client, event.rel, &self.table_names)
                     .await
                     .expect("Failed to generate insert statement");
 
-                let keys: Vec<ToSqlWrapper> = match key {
-                    cdc_avro::OverrideData::Key(vals) => {
-                        vals.into_iter().map(|v| ToSqlWrapper(v)).collect()
+                let keys: Vec<ToSqlWrapper> = match old_k {
+                    cdc_avro::OldDataKind::Key => {
+                        old.into_iter().map(|v| ToSqlWrapper(v)).collect()
                     }
-                    cdc_avro::OverrideData::Row(..) => {
+                    cdc_avro::OldDataKind::Full => {
                         todo!()
                     }
                 };

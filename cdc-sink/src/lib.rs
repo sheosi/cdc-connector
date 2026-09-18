@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+
+use ahash::RandomState;
 use cdc_avro::ChangeEvent;
 use futures_util::StreamExt;
 use rdkafka::{
@@ -66,5 +69,23 @@ pub async fn consume_from_kafka<S: KafkaSink>(own_config: KafkaConfig, mut sink:
             }
             Err(e) => eprintln!("Kafka error: {:?}", e),
         }
+    }
+}
+
+pub struct TableNames(HashMap<u32, String, RandomState>);
+
+impl TableNames {
+    pub fn new() -> Self {
+        Self(HashMap::default())
+    }
+
+    #[inline]
+    pub fn insert(&mut self, rel_oid: u32, value: String) {
+        self.0.insert(rel_oid, value);
+    }
+
+    #[inline]
+    pub fn get(&self, rel_oid: u32) -> Option<&str> {
+        self.0.get(&rel_oid).map(|s| s.as_str())
     }
 }

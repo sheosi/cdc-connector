@@ -31,11 +31,11 @@ pub fn parse<'a>(
         .get(&relation_oid)
         .ok_or_else(|| DecoderError::UnknownRelation(relation_oid))?;
 
-    let (key, _) = get_old_tuple_data(&data[8..], relation, arena)?;
+    let (old_k, old, _) = get_old_tuple_data(&data[8..], relation, arena)?;
 
     Ok(ChangeEvent {
-        op: cdc_avro::Op::Delete { key },
-        table: &relation.relname,
+        op: cdc_avro::Op::Delete { old_k, old },
+        rel: relation_oid,
     })
 }
 
@@ -66,9 +66,10 @@ mod test {
 
         let event_example = ChangeEvent {
             op: cdc_avro::Op::Delete {
-                key: cdc_avro::OverrideData::Key(bumpalo::vec![in &arena; PgValue::Int4(1)]),
+                old_k: cdc_avro::OverrideData::Key,
+                old: bumpalo::vec![in &arena; PgValue::Int4(1)],
             },
-            table: "users",
+            rel: 1,
         };
 
         assert_eq!(event, Ok(event_example));
@@ -96,17 +97,13 @@ mod test {
 
         let event_example = ChangeEvent {
             op: cdc_avro::Op::Delete {
-                key: cdc_avro::OverrideData::Row(vec![in &arena;
-                RowEntry {
-                    key: "id",
-                    value: PgValue::Int4(1),
-                },
-                RowEntry {
-                    key: "name",
-                    value: PgValue::Text("hello"),
-                },]),
+                old_k: cdc_avro::OverrideData::Row,
+                old: vec![in &arena;
+                    PgValue::Int4(1),
+                    PgValue::Text("hello")
+                ],
             },
-            table: "users",
+            rel: 1,
         };
 
         assert_eq!(event, Ok(event_example));

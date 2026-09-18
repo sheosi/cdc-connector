@@ -1,8 +1,9 @@
+use cdc_sink::TableNames;
 use std::collections::HashMap;
 use std::fmt::Write;
 use tokio_postgres::{Client, Statement};
 
-pub struct InsertStatementCache(HashMap<String, InsertStatement>);
+pub struct InsertStatementCache(HashMap<u32, InsertStatement>);
 
 impl InsertStatementCache {
     pub fn new() -> Self {
@@ -12,39 +13,43 @@ impl InsertStatementCache {
     pub async fn get(
         &mut self,
         client: &Client,
-        table: &str,
+        rel: u32,
         rows: &[&str],
+        table_names: &TableNames,
     ) -> Result<InsertStatement, tokio_postgres::Error> {
-        let key = format!("{}{:?}", table, rows);
-
         use std::collections::hash_map::Entry;
 
-        match self.0.entry(key) {
+        match self.0.entry(rel) {
             Entry::Occupied(e) => Ok(e.get().clone()),
             Entry::Vacant(e) => Ok(e
-                .insert(InsertStatement::new(client, table, rows).await?)
+                // TODO: Get relname to db here
+                .insert(InsertStatement::new(client, table_names.get(rel).unwrap(), rows).await?)
                 .clone()),
         }
     }
 }
 
-pub struct DeleteStatementCache(HashMap<String, DeleteStatement>);
+pub struct DeleteStatementCache(HashMap<u32, DeleteStatement>);
 
 impl DeleteStatementCache {
     pub fn new() -> Self {
         Self(HashMap::new())
     }
 
+    // Here, we assume a relation is a db
     pub async fn get(
         &mut self,
         client: &Client,
-        table: &str,
+        relation: u32,
+        table_names: &TableNames,
     ) -> Result<DeleteStatement, tokio_postgres::Error> {
         use std::collections::hash_map::Entry;
 
-        match self.0.entry(table.to_string()) {
+        match self.0.entry(relation) {
             Entry::Occupied(e) => Ok(e.get().clone()),
-            Entry::Vacant(e) => Ok(e.insert(DeleteStatement::new(client, table).await?).clone()),
+            Entry::Vacant(e) => Ok(e
+                .insert(DeleteStatement::new(client, table_names.get(relation).unwrap()).await?)
+                .clone()),
         }
     }
 }

@@ -2,52 +2,32 @@ use bumpalo::collections::Vec;
 use serde::Serialize;
 use serde::{Serializer, ser::SerializeStruct};
 use serde_avro_fast::Schema;
+use serde_repr::Serialize_repr;
 use std::sync::LazyLock;
 use thiserror::Error;
 
 #[derive(Serialize, Debug, Clone, PartialEq)]
 pub enum Op<'a> {
     Insert {
-        #[serde(borrow)]
-        row: Vec<'a, RowEntry<'a>>,
+        row: Vec<'a, PgValue<'a>>,
     },
     Update {
-        key: OverrideData<'a>,
-        row: Vec<'a, RowEntry<'a>>,
+        old_k: OldDataKind,
+
+        old: Vec<'a, PgValue<'a>>,
+        row: Vec<'a, PgValue<'a>>,
     },
     Delete {
-        key: OverrideData<'a>,
+        old_k: OldDataKind,
+        old: Vec<'a, PgValue<'a>>,
     },
 }
 
-#[derive(Serialize, Debug, Clone, PartialEq)]
-pub struct RowEntry<'a> {
-    pub key: &'a str,
-    #[serde(borrow)]
-    pub value: PgValue<'a>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum OverrideData<'a> {
-    Key(Vec<'a, PgValue<'a>>),
-    Row(Vec<'a, RowEntry<'a>>),
-}
-
-impl<'a> Serialize for OverrideData<'a> {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        match self {
-            OverrideData::Key(vals) => {
-                let mut record = serializer.serialize_struct("Key", 1)?;
-                record.serialize_field("Key", vals)?;
-                record.end()
-            }
-            OverrideData::Row(row) => {
-                let mut record = serializer.serialize_struct("Row", 1)?;
-                record.serialize_field("Row", row)?;
-                record.end()
-            }
-        }
-    }
+#[derive(Serialize_repr, Debug, Clone, PartialEq)]
+#[repr(u8)]
+pub enum OldDataKind {
+    Key,
+    Full,
 }
 
 #[derive(Debug, Error)]
@@ -63,7 +43,7 @@ pub enum FromAvroError {
 pub struct ChangeEvent<'a> {
     #[serde(borrow)]
     pub op: Op<'a>,
-    pub table: &'a str,
+    pub rel: u32,
 }
 
 impl<'a> ChangeEvent<'a> {
@@ -139,12 +119,11 @@ mod tests {
 
         let event = ChangeEvent {
             op: Op::Insert {
-                row: vec![in &arena; RowEntry {
-                    key: "a",
+                row: vec![in &arena;
                     value: PgValue::Text("b"),
-                }],
+                ],
             },
-            table: "users",
+            rel: 1024,
         };
 
         let bytes = event.into_avro().unwrap();

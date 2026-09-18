@@ -30,13 +30,17 @@ pub fn parse<'a>(
         .get(&relation_oid)
         .ok_or_else(|| DecoderError::UnknownRelation(relation_oid))?;
 
-    let (key, old_data_end) = get_old_tuple_data(&data[8..], &relation, &arena)?;
+    let (old_k, old, old_data_end) = get_old_tuple_data(&data[8..], &relation, &arena)?;
 
     let new_data = get_new_tuple_data(&data[old_data_end + 8..], &arena, &relation)?;
 
     Ok(ChangeEvent {
-        op: cdc_avro::Op::Update { key, row: new_data },
-        table: &relation.relname,
+        op: cdc_avro::Op::Update {
+            old_k,
+            old,
+            row: new_data,
+        },
+        rel: relation_oid,
     })
 }
 
@@ -79,7 +83,8 @@ mod test {
 
         let event_example = ChangeEvent {
             op: cdc_avro::Op::Update {
-                key: cdc_avro::OverrideData::Key(bumpalo::vec![in &arena;PgValue::Int4(1)]),
+                old_k: cdc_avro::OldDataKind::Key,
+                old: bumpalo::vec![in &arena;PgValue::Int4(1)],
                 row: vec![in &arena;
                     RowEntry {
                         key: "id",
@@ -91,7 +96,7 @@ mod test {
                     },
                 ],
             },
-            table: "users",
+            rel: 1,
         };
 
         assert_eq!(event, Ok(event_example));
@@ -126,16 +131,12 @@ mod test {
 
         let event_example = ChangeEvent {
             op: cdc_avro::Op::Update {
-                key: cdc_avro::OverrideData::Row(vec![ in &arena;
-                    RowEntry {
-                        key: "id",
-                        value: cdc_avro::PgValue::Int4(1),
-                    },
-                    RowEntry {
-                        key: "name",
-                        value: cdc_avro::PgValue::Text("hello"),
-                    },
-                ]),
+                old_k: cdc_avro::OldDataKind::Full,
+                old: vec![ in &arena;
+                    cdc_avro::PgValue::Int4(1),
+                    cdc_avro::PgValue::Text("hello"),
+                ],
+
                 row: vec![ in &arena;
                     RowEntry {
                         key: "id",
@@ -147,7 +148,7 @@ mod test {
                     },
                 ],
             },
-            table: "users",
+            rel: 1,
         };
 
         assert_eq!(event, Ok(event_example));

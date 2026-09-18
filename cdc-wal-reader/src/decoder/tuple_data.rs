@@ -1,5 +1,5 @@
 use bumpalo::{Bump, collections::Vec};
-use cdc_avro::{PgValue, RowEntry};
+use cdc_avro::PgValue;
 
 use crate::decoder::{
     DecoderError,
@@ -10,7 +10,7 @@ pub fn parse<'a>(
     data: &'a [u8],
     arena: &'a Bump,
     relation: &'a Relation,
-) -> Result<(Vec<'a, RowEntry<'a>>, usize), DecoderError> {
+) -> Result<(Vec<'a, PgValue<'a>>, usize), DecoderError> {
     // Network byte order is be
     let n_cols = u16::from_be_bytes(
         data[0..2]
@@ -26,10 +26,7 @@ pub fn parse<'a>(
 
         last_pos += len;
 
-        cols.push(RowEntry {
-            key: &r.name,
-            value,
-        });
+        cols.push(value);
     }
 
     Ok((cols, last_pos))

@@ -1,7 +1,7 @@
 #[cfg(test)]
 use ahash::RandomState;
-use bumpalo::Bump;
-use cdc_avro::{OverrideData, RowEntry};
+use bumpalo::{Bump, collections::Vec};
+use cdc_avro::{OldDataKind, PgValue};
 
 use crate::decoder::{
     DecoderError::{self, WrongOldTupleKey},
@@ -17,15 +17,15 @@ pub fn get_old_tuple_data<'a>(
     data: &'a [u8],
     relation: &'a Relation,
     arena: &'a Bump,
-) -> Result<(OverrideData<'a>, usize), DecoderError> {
+) -> Result<(OldDataKind, Vec<'a, PgValue<'a>>, usize), DecoderError> {
     match data[0] {
         b'K' => {
             let (keys, size) = tuple_data::parse_keys(&data[1..], arena, relation)?;
-            Ok((OverrideData::Key(keys), size + 1))
+            Ok((OldDataKind::Key, keys, size + 1))
         }
         b'O' => {
             let (row, size) = tuple_data::parse(&data[1..], arena, relation)?;
-            Ok((OverrideData::Row(row), size + 1))
+            Ok((OldDataKind::Full, row, size + 1))
         }
         a => Err(WrongOldTupleKey(a)),
     }
@@ -35,7 +35,7 @@ pub fn get_new_tuple_data<'a>(
     data: &'a [u8],
     arena: &'a Bump,
     relation: &'a Relation,
-) -> Result<bumpalo::collections::Vec<'a, RowEntry<'a>>, DecoderError> {
+) -> Result<bumpalo::collections::Vec<'a, PgValue<'a>>, DecoderError> {
     if data[0] != b'N' {
         return Err(DecoderError::WrongNewTupleKey(data[0]));
     }
@@ -142,7 +142,7 @@ pub fn col_text_name<'a>() -> RowEntry<'a> {
 #[cfg(test)]
 mod test {
     use bumpalo::{Bump, vec};
-    use cdc_avro::{OverrideData, PgValue, RowEntry};
+    use cdc_avro::{OldDataKind, OverrideData, PgValue, RowEntry};
 
     use crate::decoder::common::{
         col_byte_id, col_text_name, get_example_rel, get_new_tuple_data, get_old_tuple_data,
@@ -157,9 +157,9 @@ mod test {
         let example_rel = get_example_rel();
 
         let old_tuple = get_old_tuple_data(&data, &example_rel, &arena);
-        let old_tuple_manual = OverrideData::Row(vec![in &arena]);
+        let old_tuple_manual = (OldDataKind::Full, vec![in &arena], 3);
 
-        assert_eq!(old_tuple, Ok((old_tuple_manual, 3)));
+        assert_eq!(old_tuple, Ok(old_tuple_manual));
     }
 
     #[test]
@@ -171,9 +171,9 @@ mod test {
         let example_rel = get_example_rel();
 
         let key_tuple = get_old_tuple_data(&data, &example_rel, &arena);
-        let key_tuple_manual = OverrideData::Key(vec![in &arena]);
+        let key_tuple_manual = (OverrideData::Key, vec![in &arena], 3);
 
-        assert_eq!(key_tuple, Ok((key_tuple_manual, 3)));
+        assert_eq!(key_tuple, Ok(key_tuple_manual));
     }
 
     #[test]
@@ -193,13 +193,14 @@ mod test {
 
         let old_tuple = get_old_tuple_data(&data, &example_rel, &arena);
 
-        let old_tuple_manual = OverrideData::Row(vec![
+        let old_tuple_row = vec![
         in &arena;
-            RowEntry{key: "id", value: PgValue::Int4(1)},
-            RowEntry{key:"name", value:PgValue::Text("hello")}
-        ]);
+            PgValue::Int4(1),
+            PgValue::Text("hello")
+        ];
+        let old_tuple_manual = (OldDataKind::Full, old_tuple_row, 22);
 
-        assert_eq!(old_tuple, Ok((old_tuple_manual, 22)));
+        assert_eq!(old_tuple, Ok(old_tuple_manual));
     }
 
     #[test]

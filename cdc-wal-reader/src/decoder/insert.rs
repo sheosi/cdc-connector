@@ -25,7 +25,7 @@ pub fn parse<'a>(
 
     Ok(ChangeEvent {
         op: cdc_avro::Op::Insert { row },
-        table: &relation.relname,
+        rel: relation.relation_oid,
     })
 }
 
@@ -115,7 +115,7 @@ mod test {
 
         let event_example = ChangeEvent {
             op: cdc_avro::Op::Insert { row },
-            table: "users",
+            rel: 1,
         };
 
         assert_eq!(event, Ok(event_example));
@@ -151,7 +151,7 @@ mod test {
 
         let event_example = ChangeEvent {
             op: cdc_avro::Op::Insert { row },
-            table: "users",
+            rel: 1,
         };
 
         assert_eq!(event, Ok(event_example));

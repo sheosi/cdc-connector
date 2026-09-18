@@ -126,6 +126,9 @@ fn bench(c: &mut Criterion) {
     rel_map.insert(12345, order_items_rel);
     let arena = Bump::with_capacity(2048);
 
+    // Make sure doesn't return err
+    decoder::insert::parse(&data, &rel_map, &arena).unwrap();
+
     c.bench_function("normal", |b| {
         b.iter(|| {
             black_box(decoder::insert::parse(
