@@ -11,6 +11,26 @@ pub fn parse<'a>(
     arena: &'a Bump,
     relation: &'a Relation,
 ) -> Result<(Vec<'a, PgValue<'a>>, usize), DecoderError> {
+    #[inline(always)]
+    fn num_cols<'a, const N: usize>(
+        data: &'a [u8],
+        relation: &Relation,
+        arena: &'a Bump,
+    ) -> Result<(Vec<'a, PgValue<'a>>, usize), DecoderError> {
+        let mut last_pos = 2;
+        let mut cols = Vec::with_capacity_in(N, arena);
+
+        for i in 0..N {
+            let (value, len) = parse_value(&data[last_pos..], &relation.fields[i])?;
+
+            last_pos += len;
+
+            cols.push(value);
+        }
+
+        Ok((cols, last_pos))
+    }
+
     // Network byte order is be
     let n_cols = u16::from_be_bytes(
         data[0..2]
@@ -18,18 +38,28 @@ pub fn parse<'a>(
             .map_err(|_| DecoderError::TruncatedInput)?,
     );
 
-    let mut last_pos = 2;
-    let mut cols = Vec::with_capacity_in(n_cols as usize, arena);
+    match n_cols {
+        1 => num_cols::<1>(data, &relation, arena),
+        2 => num_cols::<2>(data, &relation, arena),
+        3 => num_cols::<3>(data, &relation, arena),
+        4 => num_cols::<4>(data, &relation, arena),
+        5 => num_cols::<5>(data, &relation, arena),
+        6 => num_cols::<6>(data, &relation, arena),
+        _ => {
+            let mut last_pos = 2;
+            let mut cols = Vec::with_capacity_in(n_cols as usize, arena);
 
-    for (_, r) in (0..n_cols).zip(relation.fields.iter()) {
-        let (value, len) = parse_value(&data[last_pos..], &r)?;
+            for i in 0..n_cols {
+                let (value, len) = parse_value(&data[last_pos..], &relation.fields[i as usize])?;
 
-        last_pos += len;
+                last_pos += len;
 
-        cols.push(value);
+                cols.push(value);
+            }
+
+            Ok((cols, last_pos))
+        }
     }
-
-    Ok((cols, last_pos))
 }
 
 fn parse_value<'a>(data: &'a [u8], field: &Field) -> Result<(PgValue<'a>, usize), DecoderError> {
