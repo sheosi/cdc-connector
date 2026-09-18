@@ -1,4 +1,5 @@
 use bytes::Bytes;
+use cdc_avro::ReplicaKind;
 use std::ffi::CStr;
 
 use crate::decoder::DecoderError;
@@ -8,8 +9,8 @@ pub struct Relation {
     pub relation_oid: u32,
     pub namespace: String,
     pub relname: String,
-    pub replica_id: u8,
     pub fields: Vec<Field>,
+    pub replica_id: ReplicaKind,
 
     /// A subset of above, they are the fields marked as keys, for when only keys
     /// are searched for
@@ -34,7 +35,11 @@ impl Relation {
             .to_string();
 
         let replica_id_pos = 5 + namespace.len() + 1 + relname.len() + 1;
-        let replica_id = data[replica_id_pos];
+        let replica_id = match data[replica_id_pos] {
+            0 => ReplicaKind::Keys,
+            2 => ReplicaKind::Row,
+            a => return Err(DecoderError::WrongReplicaId(a)),
+        };
 
         let cols = u16::from_be_bytes(
             data[replica_id_pos + 1..replica_id_pos + 3]
@@ -175,7 +180,9 @@ impl FieldKind {
 
 #[cfg(test)]
 mod test {
-    use crate::decoder::relation::{Field, FieldKind, FieldParseResult, KeyField, Relation};
+    use crate::decoder::relation::{
+        Field, FieldKind, FieldParseResult, KeyField, Relation, ReplicaKind,
+    };
 
     fn field_id() -> Field {
         Field {
@@ -213,7 +220,7 @@ mod test {
             relation_oid: 1,
             namespace: "public".to_string(),
             relname: "users".to_string(),
-            replica_id: 0,
+            replica_id: ReplicaKind::Keys,
             fields: vec![field_id()],
             key_fields: vec![key_field_id()],
         };

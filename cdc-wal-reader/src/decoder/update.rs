@@ -20,6 +20,7 @@ pub fn parse<'a>(
             .try_into()
             .map_err(|_| DecoderError::TruncatedInput)?,
     );*/
+
     let relation_oid = u32::from_be_bytes(
         data[4..8]
             .try_into()
@@ -30,16 +31,12 @@ pub fn parse<'a>(
         .get(&relation_oid)
         .ok_or_else(|| DecoderError::UnknownRelation(relation_oid))?;
 
-    let (old_k, old, old_data_end) = get_old_tuple_data(&data[8..], &relation, &arena)?;
+    let (old, old_data_end) = get_old_tuple_data(&data[8..], &relation, &arena)?;
 
     let new_data = get_new_tuple_data(&data[old_data_end + 8..], &arena, &relation)?;
 
     Ok(ChangeEvent {
-        op: cdc_avro::Op::Update {
-            old_k,
-            old,
-            row: new_data,
-        },
+        op: cdc_avro::Op::Update { old, row: new_data },
         rel: relation_oid,
     })
 }
@@ -83,7 +80,6 @@ mod test {
 
         let event_example = ChangeEvent {
             op: cdc_avro::Op::Update {
-                old_k: cdc_avro::OldDataKind::Key,
                 old: bumpalo::vec![in &arena;PgValue::Int4(1)],
                 row: vec![in &arena;
                     RowEntry {
@@ -131,7 +127,6 @@ mod test {
 
         let event_example = ChangeEvent {
             op: cdc_avro::Op::Update {
-                old_k: cdc_avro::OldDataKind::Full,
                 old: vec![ in &arena;
                     cdc_avro::PgValue::Int4(1),
                     cdc_avro::PgValue::Text("hello"),

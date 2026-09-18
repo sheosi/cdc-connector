@@ -31,10 +31,10 @@ pub fn parse<'a>(
         .get(&relation_oid)
         .ok_or_else(|| DecoderError::UnknownRelation(relation_oid))?;
 
-    let (old_k, old, _) = get_old_tuple_data(&data[8..], relation, arena)?;
+    let (old, _) = get_old_tuple_data(&data[8..], relation, arena)?;
 
     Ok(ChangeEvent {
-        op: cdc_avro::Op::Delete { old_k, old },
+        op: cdc_avro::Op::Delete { old },
         rel: relation_oid,
     })
 }
@@ -66,7 +66,6 @@ mod test {
 
         let event_example = ChangeEvent {
             op: cdc_avro::Op::Delete {
-                old_k: cdc_avro::OverrideData::Key,
                 old: bumpalo::vec![in &arena; PgValue::Int4(1)],
             },
             rel: 1,
@@ -97,7 +96,6 @@ mod test {
 
         let event_example = ChangeEvent {
             op: cdc_avro::Op::Delete {
-                old_k: cdc_avro::OverrideData::Row,
                 old: vec![in &arena;
                     PgValue::Int4(1),
                     PgValue::Text("hello")

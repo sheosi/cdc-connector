@@ -1,7 +1,7 @@
 #[cfg(test)]
 use ahash::RandomState;
 use bumpalo::{Bump, collections::Vec};
-use cdc_avro::{OldDataKind, PgValue};
+use cdc_avro::{PgValue, ReplicaKind};
 
 use crate::decoder::{
     DecoderError::{self, WrongOldTupleKey},
@@ -17,15 +17,23 @@ pub fn get_old_tuple_data<'a>(
     data: &'a [u8],
     relation: &'a Relation,
     arena: &'a Bump,
-) -> Result<(OldDataKind, Vec<'a, PgValue<'a>>, usize), DecoderError> {
+) -> Result<(Vec<'a, PgValue<'a>>, usize), DecoderError> {
     match data[0] {
         b'K' => {
-            let (keys, size) = tuple_data::parse_keys(&data[1..], arena, relation)?;
-            Ok((OldDataKind::Key, keys, size + 1))
+            if relation.replica_id != ReplicaKind::Keys {
+                return Err(DecoderError::WrongOldTupleKind(ReplicaKind::Keys));
+            }
+
+            let (keys, size) = tuple_data::parse(&data[1..], arena, relation)?;
+            Ok((keys, size + 1))
         }
         b'O' => {
+            if relation.replica_id != ReplicaKind::Row {
+                return Err(DecoderError::WrongOldTupleKind(ReplicaKind::Row));
+            }
+
             let (row, size) = tuple_data::parse(&data[1..], arena, relation)?;
-            Ok((OldDataKind::Full, row, size + 1))
+            Ok((row, size + 1))
         }
         a => Err(WrongOldTupleKey(a)),
     }
@@ -103,7 +111,7 @@ pub fn get_example_rel() -> Relation {
         relation_oid: 1,
         namespace: "public".to_string(),
         relname: "users".to_string(),
-        replica_id: 0,
+        replica_id: ReplicaKind::Row,
         fields: vec![
             Field {
                 name: "id".to_string(),
@@ -157,7 +165,7 @@ mod test {
         let example_rel = get_example_rel();
 
         let old_tuple = get_old_tuple_data(&data, &example_rel, &arena);
-        let old_tuple_manual = (OldDataKind::Full, vec![in &arena], 3);
+        let old_tuple_manual = (vec![in &arena], 3);
 
         assert_eq!(old_tuple, Ok(old_tuple_manual));
     }
@@ -171,7 +179,7 @@ mod test {
         let example_rel = get_example_rel();
 
         let key_tuple = get_old_tuple_data(&data, &example_rel, &arena);
-        let key_tuple_manual = (OverrideData::Key, vec![in &arena], 3);
+        let key_tuple_manual = (vec![in &arena], 3);
 
         assert_eq!(key_tuple, Ok(key_tuple_manual));
     }
@@ -198,7 +206,7 @@ mod test {
             PgValue::Int4(1),
             PgValue::Text("hello")
         ];
-        let old_tuple_manual = (OldDataKind::Full, old_tuple_row, 22);
+        let old_tuple_manual = (old_tuple_row, 22);
 
         assert_eq!(old_tuple, Ok(old_tuple_manual));
     }

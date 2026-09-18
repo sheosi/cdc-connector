@@ -1,5 +1,6 @@
 use std::str::Utf8Error;
 
+use cdc_avro::ReplicaKind;
 use thiserror::Error;
 
 use crate::decoder::relation::FieldKind;
@@ -44,4 +45,10 @@ pub enum DecoderError {
 
     #[error("Wrong field kind {0:?}")]
     WrongFieldKind(FieldKind),
+
+    #[error("Wrong replica id value {0}")]
+    WrongReplicaId(u8),
+
+    #[error("Got a different kind of old tuple data in a message compared to the relation {0:?}")]
+    WrongOldTupleKind(ReplicaKind),
 }

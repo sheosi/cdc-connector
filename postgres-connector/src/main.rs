@@ -112,11 +112,7 @@ impl PostgresSink {
                     eprintln!("{:?}", e);
                 }
             }
-            cdc_avro::Op::Update {
-                old_k,
-                old,
-                mut row,
-            } => {
+            cdc_avro::Op::Update { old, mut row } => {
                 // TODO: how to process updates, should we upsert or not?
                 let update_stmt = self
                     .client
@@ -136,7 +132,7 @@ impl PostgresSink {
                     eprintln!("{:?}", e);
                 }
             }
-            cdc_avro::Op::Delete { old_k, old } => {
+            cdc_avro::Op::Delete { old } => {
                 let delete_stmt = self
                     .delete_stmt_cache
                     .get(&self.client, event.rel, &self.table_names)
@@ -144,10 +140,10 @@ impl PostgresSink {
                     .expect("Failed to generate insert statement");
 
                 let keys: Vec<ToSqlWrapper> = match old_k {
-                    cdc_avro::OldDataKind::Key => {
+                    cdc_avro::ReplicaKind::Keys => {
                         old.into_iter().map(|v| ToSqlWrapper(v)).collect()
                     }
-                    cdc_avro::OldDataKind::Full => {
+                    cdc_avro::ReplicaKind::Row => {
                         todo!()
                     }
                 };

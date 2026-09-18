@@ -12,22 +12,12 @@ pub enum Op<'a> {
         row: Vec<'a, PgValue<'a>>,
     },
     Update {
-        old_k: OldDataKind,
-
         old: Vec<'a, PgValue<'a>>,
         row: Vec<'a, PgValue<'a>>,
     },
     Delete {
-        old_k: OldDataKind,
         old: Vec<'a, PgValue<'a>>,
     },
-}
-
-#[derive(Serialize_repr, Debug, Clone, PartialEq)]
-#[repr(u8)]
-pub enum OldDataKind {
-    Key,
-    Full,
 }
 
 #[derive(Debug, Error)]
@@ -63,9 +53,24 @@ impl<'a> ChangeEvent<'a> {
     }
 }
 
-const CHANGE_EVENT_SCHEMA_STR: &str = r#"{"type":"record","name":"ChangeEvent","fields":[{"name":"op","type":[{"type":"record","name":"Insert","fields":[{"name":"row","type":{"type":"array","items":{"type":"record","name":"RowEntry","fields":[{"name":"key","type":"string"},{"name":"value","type":[{"type":"record","name":"Text","fields":[{"name":"Text","type":"string"}]},{"type":"record","name":"Int4","fields":[{"name":"Int4","type":"long"}]}]}]}}}]},{"type":"record","name":"Update","fields":[{"name":"key","type":[{"type":"record","name":"Key","fields":[{"name":"Key","type":{"type":"array","items":["Text","Int4"]}}]},{"type":"record","name":"Row","fields":[{"name":"Row","type":{"type":"array","items":"RowEntry"}}]}]},{"name":"row","type":{"type":"array","items":"RowEntry"}}]},{"type":"record","name":"Delete","fields":[{"name":"key","type":["Key","Row"]}]}]},{"name":"table","type":"string"}]}"#;
+#[derive(Debug, PartialEq, Serialize_repr)]
+#[repr(u8)]
+pub enum ReplicaKind {
+    Keys,
+    Row,
+}
+
+const CHANGE_EVENT_SCHEMA_STR: &str = r#"{"type":"record","name":"ChangeEvent","fields":[{"name":"op","type":[{"type":"record","name":"Insert","fields":[{"name":"row","type":{"type":"array","items":[{"type":"record","name":"Text","fields":[{"name":"Text","type":"string"}]},{"type":"record","name":"Int4","fields":[{"name":"Int4","type":"int"}]}]}}]},{"type":"record","name":"Update","fields":[{"name":"old_k","type":"int"},{"name":"old","type":{"type":"array","items":["Text","Int4"]}},{"name":"row","type":{"type":"array","items":["Text","Int4"]}}]},{"type":"record","name":"Delete","fields":[{"name":"old_k","type":"int"},{"name":"old","type":{"type":"array","items":["Text","Int4"]}}]}]},{"name":"rel","type":"int"}]}"#;
+
+const RELATION_SCHEMA_STR: &str = r#"{"type":"record","name":"Relation","fields":[{"name":"oid","type":"int"},{"name":"namespace","type":"string"},{"name":"relname","type":"string"},{"name":"fields","type":{"type":"array","items":{"type":"record","name":"Field","fields":[{"name":"name","type":"string"},{"name":"kind","type":"string"},{"name":"is_key","type":"boolean"}]}}}]}"#;
 
 const CHANGE_EVENT_SCHEMA: LazyLock<Schema> = LazyLock::new(|| {
+    CHANGE_EVENT_SCHEMA_STR
+        .parse()
+        .expect("Failed to parse Avro schema")
+});
+
+const RELATION_SCHEMA: LazyLock<Schema> = LazyLock::new(|| {
     CHANGE_EVENT_SCHEMA_STR
         .parse()
         .expect("Failed to parse Avro schema")
@@ -120,7 +125,7 @@ mod tests {
         let event = ChangeEvent {
             op: Op::Insert {
                 row: vec![in &arena;
-                    value: PgValue::Text("b"),
+                    PgValue::Text("b"),
                 ],
             },
             rel: 1024,

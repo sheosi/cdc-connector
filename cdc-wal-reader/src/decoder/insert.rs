@@ -43,7 +43,7 @@ mod test {
         relation::{
             Field,
             FieldKind::{Int4, Text},
-            KeyField, Relation,
+            KeyField, Relation, ReplicaKind,
         },
     };
 
@@ -52,7 +52,7 @@ mod test {
             relation_oid: 16390,
             namespace: "public".to_string(),
             relname: "users".to_string(),
-            replica_id: 100,
+            replica_id: ReplicaKind::Row,
             fields: vec![
                 Field {
                     is_key: true,

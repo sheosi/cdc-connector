@@ -81,8 +81,8 @@ fn bench(c: &mut Criterion) {
     let order_items_rel = Relation {
         relation_oid: 12345,
         namespace: "public".to_string(),
+        replica_id: cdc_avro::ReplicaKind::Keys,
         relname: "order_items".to_string(),
-        replica_id: 0,
         fields: vec![
             Field {
                 is_key: true,

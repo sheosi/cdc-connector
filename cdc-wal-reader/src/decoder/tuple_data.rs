@@ -32,31 +32,6 @@ pub fn parse<'a>(
     Ok((cols, last_pos))
 }
 
-pub fn parse_keys<'a>(
-    data: &'a [u8],
-    arena: &'a Bump,
-    relation: &'a Relation,
-) -> Result<(Vec<'a, PgValue<'a>>, usize), DecoderError> {
-    // Network byte order is be
-    let n_cols = u16::from_be_bytes(
-        data[0..2]
-            .try_into()
-            .map_err(|_| DecoderError::TruncatedInput)?,
-    );
-
-    let mut next_pos = 2;
-    let mut cols = Vec::with_capacity_in(n_cols as usize, arena);
-
-    for (_, r) in (0..n_cols).zip(relation.fields.iter()) {
-        let (value, len) = parse_value(&data[next_pos..], &r)?;
-
-        next_pos += len;
-        cols.push(value);
-    }
-
-    Ok((cols, next_pos))
-}
-
 fn parse_value<'a>(data: &'a [u8], field: &Field) -> Result<(PgValue<'a>, usize), DecoderError> {
     match data[0] {
         b'n' => todo!(), //Ok((TupleCol::Null, 1)),

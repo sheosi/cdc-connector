@@ -35,7 +35,7 @@ async fn send_to_producer<'a, P>(
 pub async fn start_wal_input<P: Producer>(
     config: ReplicationConfig,
     replica_identity_full: bool,
-    producer: P,
+    mut producer: P,
 ) -> Result<(), pgwire_replication::PgWireError> {
     configure_replica_identity(&config, replica_identity_full)
         .await
@@ -50,6 +50,11 @@ pub async fn start_wal_input<P: Producer>(
                 b'R' => {
                     if let Ok(relation) = decoder::relation::Relation::parse(data) {
                         println!("{:?}", &relation);
+
+                        if let Err(e) = producer.on_relation(&relation).await {
+                            eprintln!("Failed to send relation: {}", e);
+                        }
+
                         relation_map.insert(relation.relation_oid, relation);
                     }
                 }
@@ -167,5 +172,10 @@ pub trait Producer: Send {
         &self,
         event: ChangeEvent<'a>,
         lsn: i32,
+    ) -> impl std::future::Future<Output = Result<(), String>>;
+
+    fn on_relation<'a>(
+        &mut self,
+        relation: &Relation,
     ) -> impl std::future::Future<Output = Result<(), String>>;
 }

@@ -24,6 +24,7 @@ bumpalo = { version = "3.20.3", features = ["collections", "serde"] }
 
 # Faster hash
 ahash = "0.8.12"
+serde_repr = "0.1.21"
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }

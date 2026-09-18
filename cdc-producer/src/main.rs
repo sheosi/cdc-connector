@@ -13,6 +13,7 @@ pub struct KafkaProducer {
     lsn_topic: String,
     inner: FutureProducer,
     key: String,
+    arena: Bump,
 }
 
 impl KafkaProducer {
@@ -29,6 +30,7 @@ impl KafkaProducer {
             topic: config.topic.clone(),
             lsn_topic: format!("{}_lsn", config.topic),
             key: config.key.clone(),
+            arena: Bump::with_capacity(2048),
         })
     }
 }
@@ -68,6 +70,23 @@ impl CdcProducer for KafkaProducer {
         self.inner
             .commit_transaction(std::time::Duration::from_secs(3))
             .map_err(|e| e.to_string())?;
+
+        Ok(())
+    }
+
+    async fn on_relation<'a>(
+        &mut self,
+        relation: &cdc_wal_reader::decoder::relation::Relation,
+    ) -> std::prelude::v1::Result<(), String> {
+        let relation_bin = relation.to_avro();
+        let future_record = FutureRecord::to(&format!("relations/{}", relation.relation_oid))
+            .key(&self.key)
+            .payload(relation_bin);
+
+        self.inner
+            .send(future_record, std::time::Duration::from_secs(5))
+            .await
+            .map_err(|(e, _)| e.to_string())?;
 
         Ok(())
     }

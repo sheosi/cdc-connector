@@ -636,6 +636,7 @@ dependencies = [
  "memchr",
  "pgwire-replication",
  "serde",
+ "serde_repr",
  "simdutf8",
  "thiserror 2.0.20",
  "tokio",
