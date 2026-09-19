@@ -1,5 +1,5 @@
 use bumpalo::Bump;
-use cdc_avro::{ChangeEvent, PgValue, Relation};
+use cdc_avro::{ChangeEvent, Field, PgValue, Relation, ReplicaKind};
 use cdc_sink::{KafkaConfig, KafkaSink, TableNames};
 use config::Config;
 use serde::Deserialize;
@@ -91,7 +91,7 @@ impl PostgresSink {
             pk_cache: HashMap::new(),
             insert_stmt_cache: InsertStatementCache::new(),
             delete_stmt_cache: DeleteStatementCache::new(),
-            relation_cache: RelationCache::new(),
+            relation_cache: RelationCache::from_rels(&relations),
         })
     }
 
@@ -144,6 +144,7 @@ impl PostgresSink {
                     eprintln!("{:?}", e);
                 }
             }
+
             cdc_avro::Op::Delete { old } => {
                 let delete_stmt = self
                     .delete_stmt_cache
@@ -243,6 +244,38 @@ impl RelationCache {
         Self {
             identities: HashMap::new(),
             table_names: TableNames::new(),
+        }
+    }
+
+    pub fn from_rels<'a>(rels: &HashMap<u32, Relation<'a>>) -> Self {
+        fn extract_keys_pos(fields: &[Field]) -> HashSet<usize> {
+            fields
+                .iter()
+                .enumerate()
+                .fold(HashSet::new(), |mut s, (i, f)| {
+                    if f.is_key {
+                        s.insert(i);
+                    }
+
+                    s
+                })
+        }
+
+        fn extract_key_identity(rel: &Relation<'_>) -> RelationIdentity {
+            match rel.replica_id {
+                ReplicaKind::Keys => RelationIdentity::Keys(extract_keys_pos(&rel.fields)),
+                ReplicaKind::Row => RelationIdentity::Full,
+            }
+        }
+
+        let identities = rels
+            .iter()
+            .map(|(i, v)| (*i, extract_key_identity(&v)))
+            .collect();
+
+        Self {
+            identities,
+            table_names: TableNames::from_rels(&rels),
         }
     }
 }

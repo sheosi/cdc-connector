@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 
 use ahash::RandomState;
 use bumpalo::Bump;
@@ -59,8 +59,24 @@ impl KafkaClient {
         &self,
         arena: &'a Bump,
     ) -> Result<HashMap<u32, Relation<'a>>, ()> {
-        // TODO: This
-        Err(())
+        let rel_topic = format!("{}.relations", self.topic);
+        self.consumer.subscribe(&[&rel_topic]).map_err(|_| ())?;
+
+        let mut relations = HashMap::new();
+        let mut stream = self.consumer.stream();
+
+        loop {
+            match tokio::time::timeout(Duration::from_millis(500), stream.next()).await {
+                Ok(Some(Ok(msg))) => {
+                    let payload = msg.payload_view::<[u8]>().unwrap().map_err(|_| ())?;
+                    let rel = Relation::from_avro(payload).map_err(|_| ())?;
+                    relations.insert(rel.relation_oid, rel);
+                }
+                Ok(Some(Err(_))) => return Err(()),
+                Ok(None) | Err(_) => break,
+            }
+        }
+        Ok(relations)
     }
 
     pub async fn consume_from_kafka<S: KafkaSink>(&self, mut sink: S) {
@@ -102,6 +118,14 @@ pub struct TableNames(HashMap<u32, String, RandomState>);
 impl TableNames {
     pub fn new() -> Self {
         Self(HashMap::default())
+    }
+
+    pub fn from_rels(rels: &HashMap<u32, Relation<'_>>) -> Self {
+        Self(
+            rels.into_iter()
+                .map(|(i, r)| (*i, r.name.clone()))
+                .collect(),
+        )
     }
 
     #[inline]

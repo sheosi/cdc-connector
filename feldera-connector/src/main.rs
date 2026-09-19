@@ -40,25 +40,22 @@ pub struct FelderaConnector {
 #[derive(Serialize)]
 enum FelderaEvent<'a> {
     Insert(bumpalo::collections::Vec<'a, PgValue<'a>>),
-    Delete(HashMap<&'a str, PgValue<'a>>),
+    Delete(bumpalo::collections::Vec<'a, PgValue<'a>>),
 }
 
 impl<'a> FelderaEvent<'a> {
     fn convert_op_batches(batch: Vec<ChangeEvent<'a>>) -> Vec<FelderaEvent<'a>> {
         let mut result = Vec::with_capacity(batch.len());
 
-        // TODO: How do we translate to ops?
-
         for op in batch.into_iter() {
             match op.op {
                 cdc_avro::Op::Insert { row } => result.push(FelderaEvent::Insert(row)),
                 cdc_avro::Op::Update { old, row } => {
-                    // TODO! Add delete data
-
-                    //result.push(FelderaEvent::Delete());
-                    //result.push(FelderaEvent::Insert(row));
+                    result.push(FelderaEvent::Delete(old));
+                    result.push(FelderaEvent::Insert(row));
                 }
-                cdc_avro::Op::Delete { old } => { /*TODO: Add delete*//*result.push(FelderaEvent::Delete());*/
+                cdc_avro::Op::Delete { old } => {
+                    result.push(FelderaEvent::Delete(old));
                 }
             }
         }
@@ -86,7 +83,7 @@ impl FelderaConnector {
         Self {
             inner,
             pipeline,
-            table_names: TableNames::new(),
+            table_names: TableNames::from_rels(&relations),
         }
     }
 
