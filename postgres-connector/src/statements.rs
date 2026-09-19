@@ -136,7 +136,7 @@ mod test {
     }
 
     #[test]
-    fn simple_delet_str() {
+    fn simple_delete_str() {
         let delete_str = DeleteStatement::gen_str("users");
         let res_str = "DELETE FROM users WHERE id = $1";
 

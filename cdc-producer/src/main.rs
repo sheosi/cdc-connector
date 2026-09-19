@@ -43,11 +43,12 @@ impl CdcProducer for KafkaProducer {
         lsn: i32,
     ) -> Result<(), String> {
         let payload = event.into_avro().map_err(|e| e.to_string())?;
-        let lsn_payload = (0 as u32).to_be_bytes();
+        let lsn_payload = lsn.to_be_bytes();
         let topic = format!(
             "{}.events.{}.{}",
             self.topic, relation.namespace, relation.name
         );
+
         let future_record = FutureRecord::to(&topic).key(&self.key).payload(&payload);
 
         let lsn_future_record = FutureRecord::to(&self.lsn_topic)
@@ -86,9 +87,12 @@ impl CdcProducer for KafkaProducer {
         relation: &Relation<'a>,
     ) -> std::prelude::v1::Result<(), String> {
         let relation_bin = relation.to_avro().map_err(|e| e.to_string())?;
-        let rel_topic = format!("relations/{}", relation.relation_oid);
+
+        let rel_topic = format!("{}.relations", self.topic);
+        let as_bytes = relation.relation_oid.to_be_bytes();
+
         let future_record = FutureRecord::to(&rel_topic)
-            .key(&self.key)
+            .key(&as_bytes)
             .payload(&relation_bin);
 
         self.inner
