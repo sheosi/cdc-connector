@@ -195,6 +195,12 @@ impl KafkaSink for PostgresSink {
 
         Ok(())
     }
+
+    async fn on_relation<'a>(&mut self, relation: Relation<'a>) -> Result<(), String> {
+        self.relation_cache.update(relation);
+
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
@@ -248,26 +254,6 @@ impl RelationCache {
     }
 
     pub fn from_rels<'a>(rels: &HashMap<u32, Relation<'a>>) -> Self {
-        fn extract_keys_pos(fields: &[Field]) -> HashSet<usize> {
-            fields
-                .iter()
-                .enumerate()
-                .fold(HashSet::new(), |mut s, (i, f)| {
-                    if f.is_key {
-                        s.insert(i);
-                    }
-
-                    s
-                })
-        }
-
-        fn extract_key_identity(rel: &Relation<'_>) -> RelationIdentity {
-            match rel.replica_id {
-                ReplicaKind::Keys => RelationIdentity::Keys(extract_keys_pos(&rel.fields)),
-                ReplicaKind::Row => RelationIdentity::Full,
-            }
-        }
-
         let identities = rels
             .iter()
             .map(|(i, v)| (*i, extract_key_identity(&v)))
@@ -277,6 +263,33 @@ impl RelationCache {
             identities,
             table_names: TableNames::from_rels(&rels),
         }
+    }
+
+    pub fn update(&mut self, relation: Relation<'_>) {
+        self.identities
+            .insert(relation.relation_oid, extract_key_identity(&relation));
+        self.table_names
+            .insert(relation.relation_oid, relation.name);
+    }
+}
+
+fn extract_keys_pos(fields: &[Field]) -> HashSet<usize> {
+    fields
+        .iter()
+        .enumerate()
+        .fold(HashSet::new(), |mut s, (i, f)| {
+            if f.is_key {
+                s.insert(i);
+            }
+
+            s
+        })
+}
+
+fn extract_key_identity(rel: &Relation<'_>) -> RelationIdentity {
+    match rel.replica_id {
+        ReplicaKind::Keys => RelationIdentity::Keys(extract_keys_pos(&rel.fields)),
+        ReplicaKind::Row => RelationIdentity::Full,
     }
 }
 

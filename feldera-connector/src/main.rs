@@ -115,6 +115,13 @@ impl KafkaSink for FelderaConnector {
 
         Ok(())
     }
+
+    async fn on_relation<'a>(&mut self, relation: Relation<'a>) -> Result<(), String> {
+        self.table_names
+            .insert(relation.relation_oid, relation.name);
+
+        Ok(())
+    }
 }
 
 #[tokio::main]
