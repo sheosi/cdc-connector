@@ -79,6 +79,7 @@ impl<'a> RelationData<'a> {
                 .collect_in(arena),
             inner: Relation {
                 relation_oid,
+                namespace,
                 name: relname,
                 fields,
                 replica_id,
@@ -218,6 +219,7 @@ mod test {
             key_fields: vec![in &arena; key_field_id()],
             inner: Relation {
                 relation_oid: 1,
+                namespace: "public".to_string(),
                 name: "users".to_string(),
                 replica_id: ReplicaKind::Keys,
                 fields: vec![in &arena; field_id()],

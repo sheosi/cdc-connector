@@ -10,7 +10,7 @@ pub fn parse<'a>(
     data: &'a [u8],
     relation_map: &'a HashMap<u32, RelationData, RandomState>,
     arena: &'a Bump,
-) -> Result<ChangeEvent<'a>, DecoderError> {
+) -> Result<(ChangeEvent<'a>, &'a RelationData<'a>), DecoderError> {
     let relation_oid = u32::from_be_bytes(
         data[1..5]
             .try_into()
@@ -23,10 +23,12 @@ pub fn parse<'a>(
 
     let row = get_new_tuple_data(&data[5..], arena, &relation.inner.fields)?;
 
-    Ok(ChangeEvent {
+    let event = ChangeEvent {
         op: cdc_avro::Op::Insert { row },
         rel: relation.inner.relation_oid,
-    })
+    };
+
+    Ok((event, relation))
 }
 
 #[cfg(test)]
@@ -44,7 +46,7 @@ mod test {
     use bumpalo::vec;
 
     use crate::decoder::{
-        common,
+        common::{self, get_example_rel, get_example_rel_data},
         insert::parse,
         relation::{KeyField, RelationData},
     };
@@ -54,6 +56,7 @@ mod test {
             inner: Relation {
                 relation_oid: 16390,
                 name: "users".to_string(),
+                namespace: "public".to_string(),
                 replica_id: ReplicaKind::Row,
                 fields: vec![ in arena;
                     Field {
@@ -118,7 +121,7 @@ mod test {
             rel: 1,
         };
 
-        assert_eq!(event, Ok(event_example));
+        assert_eq!(event, Ok((event_example, &get_example_rel_data(&arena))));
     }
 
     #[test]
@@ -146,6 +149,6 @@ mod test {
             rel: 16390,
         };
 
-        assert_eq!(event, Ok(event_example));
+        assert_eq!(event, Ok((event_example, &complex_relation(&arena))));
     }
 }

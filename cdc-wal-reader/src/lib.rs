@@ -14,15 +14,15 @@ use crate::decoder::{DecoderError, relation::RelationData};
 pub mod decoder;
 
 async fn send_to_producer<'a, P>(
-    event_res: Result<ChangeEvent<'a>, DecoderError>,
+    event_res: Result<(ChangeEvent<'a>, &'a RelationData<'a>), DecoderError>,
     producer: &P,
     lsn: i32,
 ) where
     P: Producer,
 {
     match event_res {
-        Ok(event) => {
-            if let Err(e) = producer.send(event, lsn).await {
+        Ok((event, relation)) => {
+            if let Err(e) = producer.send(&relation.inner, event, lsn).await {
                 eprintln!("Producer had an error {}", e);
             }
         }
@@ -170,6 +170,7 @@ async fn configure_replica_identity(
 pub trait Producer: Send {
     fn send<'a>(
         &self,
+        relation: &Relation<'a>,
         event: ChangeEvent<'a>,
         lsn: i32,
     ) -> impl std::future::Future<Output = Result<(), String>>;

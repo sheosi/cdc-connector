@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
-use cdc_avro::{ChangeEvent, PgValue};
+use bumpalo::Bump;
+use cdc_avro::{ChangeEvent, PgValue, Relation};
 use cdc_sink::TableNames;
 use cdc_sink::{KafkaConfig, KafkaSink};
 use config::Config;
@@ -79,7 +80,7 @@ impl<'a> FelderaEvent<'a> {
 }
 
 impl FelderaConnector {
-    pub fn new(base_url: &str, pipeline: String) -> Self {
+    pub fn new(base_url: &str, pipeline: String, relations: HashMap<u32, Relation<'_>>) -> Self {
         let inner = Client::new(base_url, feldera_rest_api::RetryPolicy::default());
 
         Self {
@@ -128,9 +129,19 @@ async fn main() {
         .try_deserialize()
         .expect("Feldera-connector config was malformed");
 
-    cdc_sink::consume_from_kafka(
-        config.kafka,
-        FelderaConnector::new(&config.feldera.url, config.feldera.pipeline),
-    )
-    .await;
+    let arena = &Bump::with_capacity(2048);
+
+    let kafka = config.kafka.connect().await;
+    let relations = kafka
+        .load_relations(arena)
+        .await
+        .expect("Failed to load relations");
+
+    kafka
+        .consume_from_kafka(FelderaConnector::new(
+            &config.feldera.url,
+            config.feldera.pipeline,
+            relations,
+        ))
+        .await;
 }

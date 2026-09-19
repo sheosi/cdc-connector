@@ -14,7 +14,7 @@ pub fn parse<'a>(
     data: &'a bytes::Bytes,
     relation_map: &'a HashMap<u32, RelationData, RandomState>,
     arena: &'a Bump,
-) -> Result<ChangeEvent<'a>, DecoderError> {
+) -> Result<(ChangeEvent<'a>, &'a RelationData<'a>), DecoderError> {
     /*let id = u32::from_be_bytes(
         data[0..4]
             .try_into()
@@ -35,10 +35,12 @@ pub fn parse<'a>(
 
     let new_data = get_new_tuple_data(&data[old_data_end + 8..], &arena, &relation.inner.fields)?;
 
-    Ok(ChangeEvent {
+    let event = ChangeEvent {
         op: cdc_avro::Op::Update { old, row: new_data },
         rel: relation_oid,
-    })
+    };
+
+    Ok((event, relation))
 }
 
 #[cfg(test)]
@@ -48,7 +50,13 @@ mod test {
     use bumpalo::{Bump, collections::vec, vec};
     use cdc_avro::{ChangeEvent, Field, FieldKind, PgValue, Relation};
 
-    use crate::decoder::{common, update::parse};
+    use crate::decoder::{
+        common::{
+            self, get_example_rel, get_example_rel_data, get_example_rel_data_keys,
+            get_example_rel_keys,
+        },
+        update::parse,
+    };
 
     #[test]
     fn simple_update_key() {
@@ -85,7 +93,10 @@ mod test {
             rel: 1,
         };
 
-        assert_eq!(event, Ok(event_example));
+        assert_eq!(
+            event,
+            Ok((event_example, &get_example_rel_data_keys(&arena)))
+        );
     }
 
     #[test]
@@ -130,6 +141,6 @@ mod test {
             rel: 1,
         };
 
-        assert_eq!(event, Ok(event_example));
+        assert_eq!(event, Ok((event_example, &get_example_rel_data(&arena))));
     }
 }

@@ -614,6 +614,7 @@ name = "cdc-sink"
 version = "0.1.0"
 dependencies = [
  "ahash",
+ "bumpalo",
  "cdc-avro",
  "futures-util",
  "rdkafka",
@@ -2507,6 +2508,7 @@ dependencies = [
 name = "postgres-connector"
 version = "0.1.0"
 dependencies = [
+ "bumpalo",
  "cdc-avro",
  "cdc-sink",
  "config",

@@ -114,6 +114,7 @@ pub fn get_example_rel(arena: &Bump) -> Relation {
     Relation {
         relation_oid: 1,
         name: "users".to_string(),
+        namespace: "public".to_string(),
         replica_id: ReplicaKind::Row,
         fields: bumpalo::vec![in arena;
             Field {
@@ -158,6 +159,7 @@ pub fn get_example_rel_keys(arena: &Bump) -> Relation {
     Relation {
         relation_oid: 1,
         name: "users".to_string(),
+        namespace: "public".to_string(),
         replica_id: ReplicaKind::Keys,
         fields: bumpalo::vec![in arena;
             Field {

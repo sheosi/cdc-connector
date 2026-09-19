@@ -67,6 +67,7 @@ const CHANGE_EVENT_SCHEMA: LazyLock<Schema> = LazyLock::new(|| {
 pub struct Relation<'a> {
     pub relation_oid: u32,
     pub name: String,
+    pub namespace: String,
     pub fields: Vec<'a, Field>,
     pub replica_id: ReplicaKind,
 }

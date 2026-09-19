@@ -1,4 +1,5 @@
-use cdc_avro::{ChangeEvent, PgValue};
+use bumpalo::Bump;
+use cdc_avro::{ChangeEvent, PgValue, Relation};
 use cdc_sink::{KafkaConfig, KafkaSink, TableNames};
 use config::Config;
 use serde::Deserialize;
@@ -16,6 +17,8 @@ mod statements;
 
 #[tokio::main]
 async fn main() {
+    let arena = Bump::with_capacity(2048);
+
     let config: BridgeConfig = Config::builder()
         .add_source(config::File::with_name("feldera-connector"))
         .build()
@@ -23,13 +26,19 @@ async fn main() {
         .try_deserialize()
         .expect("postgres-connect config is malformed");
 
-    cdc_sink::consume_from_kafka(
-        config.kafka,
-        PostgresSink::new(config.postgres)
-            .await
-            .expect("Failed to connect to postgres"),
-    )
-    .await;
+    let kafka = config.kafka.connect().await;
+    let relations = kafka
+        .load_relations(&arena)
+        .await
+        .expect("Failed to load relations");
+
+    kafka
+        .consume_from_kafka(
+            PostgresSink::new(config.postgres, relations)
+                .await
+                .expect("Failed to connect to postgres"),
+        )
+        .await;
 }
 
 #[derive(Debug, Error)]
@@ -70,7 +79,10 @@ pub struct PostgresSink {
 }
 
 impl PostgresSink {
-    async fn new(config: PostgresConfig) -> Result<Self, tokio_postgres::Error> {
+    async fn new(
+        config: PostgresConfig,
+        relations: HashMap<u32, Relation<'_>>,
+    ) -> Result<Self, tokio_postgres::Error> {
         let (clt, conn) = tokio_postgres::connect(&config.to_postgres_string(), NoTls).await?;
 
         Ok(Self {
