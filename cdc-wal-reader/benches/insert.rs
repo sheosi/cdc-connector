@@ -4,6 +4,7 @@ use std::{collections::HashMap, ffi::CStr};
 
 use bumpalo::Bump;
 use cdc_wal_reader::decoder;
+use cdc_wal_reader::decoder::relation::{KeyField, RelationData};
 use criterion::{Criterion, criterion_group, criterion_main};
 use memchr::memchr;
 use simdutf8::basic::from_utf8 as simd_from_utf8;
@@ -76,46 +77,48 @@ fn parse_scalar_simd(data: &[u8]) -> &str {
 }
 
 fn bench(c: &mut Criterion) {
-    use cdc_wal_reader::decoder::relation::{Field, FieldKind, KeyField, Relation};
+    use cdc_avro::{Field, FieldKind, Relation};
+    let arena = Bump::with_capacity(2048);
 
-    let order_items_rel = Relation {
-        relation_oid: 12345,
-        namespace: "public".to_string(),
-        replica_id: cdc_avro::ReplicaKind::Keys,
-        relname: "order_items".to_string(),
-        fields: vec![
-            Field {
-                is_key: true,
-                name: "id".to_string(),
-                kind: FieldKind::Int4,
-            },
-            Field {
-                is_key: false,
-                name: "order_id".to_string(),
-                kind: FieldKind::Int4,
-            },
-            Field {
-                is_key: false,
-                name: "product_id".to_string(),
-                kind: FieldKind::Int4,
-            },
-            Field {
-                is_key: false,
-                name: "quantity".to_string(),
-                kind: FieldKind::Int4,
-            },
-            Field {
-                is_key: false,
-                name: "price_cents".to_string(),
-                kind: FieldKind::Int4,
-            },
-            Field {
-                is_key: false,
-                name: "created_at".to_string(),
-                kind: FieldKind::Text,
-            },
-        ],
-        key_fields: vec![KeyField {
+    let order_items_rel = RelationData {
+        inner: Relation {
+            relation_oid: 12345,
+            replica_id: cdc_avro::ReplicaKind::Keys,
+            name: "order_items".to_string(),
+            fields: bumpalo::vec![in &arena;
+                Field {
+                    is_key: true,
+                    name: "id".to_string(),
+                    kind: FieldKind::Int4,
+                },
+                Field {
+                    is_key: false,
+                    name: "order_id".to_string(),
+                    kind: FieldKind::Int4,
+                },
+                Field {
+                    is_key: false,
+                    name: "product_id".to_string(),
+                    kind: FieldKind::Int4,
+                },
+                Field {
+                    is_key: false,
+                    name: "quantity".to_string(),
+                    kind: FieldKind::Int4,
+                },
+                Field {
+                    is_key: false,
+                    name: "price_cents".to_string(),
+                    kind: FieldKind::Int4,
+                },
+                Field {
+                    is_key: false,
+                    name: "created_at".to_string(),
+                    kind: FieldKind::Text,
+                },
+            ],
+        },
+        key_fields: bumpalo::vec![in &arena; KeyField {
             name: "id".to_string(),
             kind: FieldKind::Int4,
         }],
@@ -124,7 +127,6 @@ fn bench(c: &mut Criterion) {
     let data = bytes::Bytes::from_static(&INSERT_DATA);
     let mut rel_map = HashMap::default();
     rel_map.insert(12345, order_items_rel);
-    let arena = Bump::with_capacity(2048);
 
     // Make sure doesn't return err
     decoder::insert::parse(&data, &rel_map, &arena).unwrap();

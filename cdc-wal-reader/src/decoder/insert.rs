@@ -4,11 +4,11 @@ use std::collections::HashMap;
 use bumpalo::Bump;
 use cdc_avro::ChangeEvent;
 
-use crate::decoder::{DecoderError, common::get_new_tuple_data, relation::Relation};
+use crate::decoder::{DecoderError, common::get_new_tuple_data, relation::RelationData};
 
 pub fn parse<'a>(
     data: &'a [u8],
-    relation_map: &'a HashMap<u32, Relation, RandomState>,
+    relation_map: &'a HashMap<u32, RelationData, RandomState>,
     arena: &'a Bump,
 ) -> Result<ChangeEvent<'a>, DecoderError> {
     let relation_oid = u32::from_be_bytes(
@@ -21,11 +21,11 @@ pub fn parse<'a>(
         .get(&relation_oid)
         .ok_or_else(|| DecoderError::UnknownRelation(relation_oid))?;
 
-    let row = get_new_tuple_data(&data[5..], arena, &relation)?;
+    let row = get_new_tuple_data(&data[5..], arena, &relation.inner.fields)?;
 
     Ok(ChangeEvent {
         op: cdc_avro::Op::Insert { row },
-        rel: relation.relation_oid,
+        rel: relation.inner.relation_oid,
     })
 }
 
@@ -35,51 +35,56 @@ mod test {
 
     use ahash::RandomState;
     use bumpalo::Bump;
-    use cdc_avro::{ChangeEvent, PgValue, RowEntry};
+    use cdc_avro::{
+        ChangeEvent, Field,
+        FieldKind::{Int4, Text},
+        PgValue, Relation, ReplicaKind,
+    };
+
+    use bumpalo::vec;
 
     use crate::decoder::{
         common,
         insert::parse,
-        relation::{
-            Field,
-            FieldKind::{Int4, Text},
-            KeyField, Relation, ReplicaKind,
-        },
+        relation::{KeyField, RelationData},
     };
 
-    fn complex_relation() -> Relation {
-        Relation {
-            relation_oid: 16390,
-            namespace: "public".to_string(),
-            relname: "users".to_string(),
-            replica_id: ReplicaKind::Row,
-            fields: vec![
-                Field {
-                    is_key: true,
+    fn complex_relation(arena: &Bump) -> RelationData {
+        RelationData {
+            inner: Relation {
+                relation_oid: 16390,
+                name: "users".to_string(),
+                replica_id: ReplicaKind::Row,
+                fields: vec![ in arena;
+                    Field {
+                        is_key: true,
+                        name: "id".to_string(),
+                        kind: Int4,
+                    },
+                    Field {
+                        is_key: false,
+                        name: "name".to_string(),
+                        kind: Text,
+                    },
+                    Field {
+                        is_key: false,
+                        name: "email".to_string(),
+                        kind: Text,
+                    },
+                ],
+            },
+            key_fields: vec![in arena;
+                KeyField {
                     name: "id".to_string(),
                     kind: Int4,
-                },
-                Field {
-                    is_key: false,
-                    name: "name".to_string(),
-                    kind: Text,
-                },
-                Field {
-                    is_key: false,
-                    name: "email".to_string(),
-                    kind: Text,
-                },
+                }
             ],
-            key_fields: vec![KeyField {
-                name: "id".to_string(),
-                kind: Int4,
-            }],
         }
     }
 
-    fn complex_relation_map() -> HashMap<u32, Relation, RandomState> {
+    fn complex_relation_map(arena: &Bump) -> HashMap<u32, RelationData, RandomState> {
         let mut rel_map = HashMap::default();
-        rel_map.insert(16390, complex_relation());
+        rel_map.insert(16390, complex_relation(arena));
         rel_map
     }
 
@@ -97,20 +102,15 @@ mod test {
             b'h', b'e', b'l', b'l', b'o', // Text hello
         ]);
 
-        let relation_map = common::get_example_rel_map();
-
         let arena = Bump::new();
+
+        let relation_map = common::get_example_rel_map(&arena);
+
         let event = parse(&data, &relation_map, &arena);
 
         let mut row = bumpalo::vec![in &arena;
-            RowEntry {
-                key: "id",
-                value: PgValue::Int4(1),
-            },
-            RowEntry {
-                key: "name",
-                value: PgValue::Text("hello"),
-            },
+                PgValue::Int4(1),
+                PgValue::Text("hello")
         ];
 
         let event_example = ChangeEvent {
@@ -129,29 +129,21 @@ mod test {
             b'd', b'a', b'@', b'e', b'x', b'a', b'm', b'p', b'l', b'e', b'.', b'c', b'o', b'm',
         ]);
 
-        let relation_map = complex_relation_map();
         let arena = Bump::new();
+
+        let relation_map = complex_relation_map(&arena);
 
         let event = parse(&data, &relation_map, &arena);
 
-        let mut row = bumpalo::vec![in &arena;
-            RowEntry {
-                key: "id",
-                value: PgValue::Text("1"),
-            },
-            RowEntry {
-                key: "name",
-                value: PgValue::Text("ada"),
-            },
-            RowEntry {
-                key: "email",
-                value: PgValue::Text("ada@example.com"),
-            },
+        let row = bumpalo::vec![in &arena;
+            PgValue::Text("1"),
+            PgValue::Text("ada"),
+            PgValue::Text("ada@example.com")
         ];
 
         let event_example = ChangeEvent {
             op: cdc_avro::Op::Insert { row },
-            rel: 1,
+            rel: 16390,
         };
 
         assert_eq!(event, Ok(event_example));

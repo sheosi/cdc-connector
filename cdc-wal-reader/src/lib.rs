@@ -2,13 +2,13 @@ use std::collections::HashMap;
 
 use ahash::RandomState;
 use bumpalo::Bump;
-use cdc_avro::ChangeEvent;
+use cdc_avro::{ChangeEvent, Relation};
 use pgwire_replication::{ReplicationClient, ReplicationEvent};
 
 pub use pgwire_replication::ReplicationConfig;
 use tokio_postgres::NoTls;
 
-use crate::decoder::{DecoderError, relation::Relation};
+use crate::decoder::{DecoderError, relation::RelationData};
 
 // This has to be public for the benches to make use of it
 pub mod decoder;
@@ -41,21 +41,21 @@ pub async fn start_wal_input<P: Producer>(
         .await
         .unwrap();
     let mut client = ReplicationClient::connect(config).await?;
-    let mut relation_map = HashMap::<u32, Relation, RandomState>::default();
     let arena = Bump::with_capacity(1024);
+    let mut relation_map = HashMap::<u32, RelationData, RandomState>::default();
 
     while let Some(ev) = client.recv().await? {
         match ev {
             ReplicationEvent::XLogData { wal_end, data, .. } => match data[0] {
                 b'R' => {
-                    if let Ok(relation) = decoder::relation::Relation::parse(data) {
+                    if let Ok(relation) = decoder::relation::RelationData::parse(data, &arena) {
                         println!("{:?}", &relation);
 
-                        if let Err(e) = producer.on_relation(&relation).await {
+                        if let Err(e) = producer.on_relation(&relation.inner).await {
                             eprintln!("Failed to send relation: {}", e);
                         }
 
-                        relation_map.insert(relation.relation_oid, relation);
+                        relation_map.insert(relation.inner.relation_oid, relation);
                     }
                 }
                 b'B' => {
@@ -176,6 +176,6 @@ pub trait Producer: Send {
 
     fn on_relation<'a>(
         &mut self,
-        relation: &Relation,
+        relation: &Relation<'a>,
     ) -> impl std::future::Future<Output = Result<(), String>>;
 }

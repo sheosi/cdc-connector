@@ -7,13 +7,13 @@ use cdc_avro::ChangeEvent;
 use crate::decoder::{
     DecoderError::{self},
     common::get_old_tuple_data,
-    relation::Relation,
+    relation::RelationData,
 };
 
 /// Parse the bytes of a delete command, don't include the initial 'D' present
 pub fn parse<'a>(
     data: &'a bytes::Bytes,
-    relation_map: &'a HashMap<u32, Relation, RandomState>,
+    relation_map: &'a HashMap<u32, RelationData, RandomState>,
     arena: &'a Bump,
 ) -> Result<ChangeEvent<'a>, DecoderError> {
     /*let id = u32::from_be_bytes(
@@ -31,7 +31,7 @@ pub fn parse<'a>(
         .get(&relation_oid)
         .ok_or_else(|| DecoderError::UnknownRelation(relation_oid))?;
 
-    let (old, _) = get_old_tuple_data(&data[8..], relation, arena)?;
+    let (old, _) = get_old_tuple_data(&data[8..], &relation, arena)?;
 
     Ok(ChangeEvent {
         op: cdc_avro::Op::Delete { old },
@@ -44,7 +44,7 @@ mod test {
     use std::collections::HashMap;
 
     use bumpalo::{Bump, vec};
-    use cdc_avro::{ChangeEvent, PgValue, RowEntry};
+    use cdc_avro::{ChangeEvent, PgValue};
 
     use crate::decoder::{common, delete::parse};
 
@@ -59,8 +59,9 @@ mod test {
             0, 0, 0, 1, // Int4: 1
         ]);
 
-        let relation_map = common::get_example_rel_map();
         let arena = Bump::with_capacity(512);
+
+        let relation_map = common::get_example_rel_map_keys(&arena);
 
         let event = parse(&data, &relation_map, &arena);
 
@@ -90,7 +91,7 @@ mod test {
 
         let arena = Bump::new();
 
-        let relation_map = common::get_example_rel_map();
+        let relation_map = common::get_example_rel_map(&arena);
 
         let event = parse(&data, &relation_map, &arena);
 

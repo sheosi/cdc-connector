@@ -7,12 +7,12 @@ use cdc_avro::ChangeEvent;
 use crate::decoder::{
     DecoderError,
     common::{get_new_tuple_data, get_old_tuple_data},
-    relation::Relation,
+    relation::RelationData,
 };
 
 pub fn parse<'a>(
     data: &'a bytes::Bytes,
-    relation_map: &'a HashMap<u32, Relation, RandomState>,
+    relation_map: &'a HashMap<u32, RelationData, RandomState>,
     arena: &'a Bump,
 ) -> Result<ChangeEvent<'a>, DecoderError> {
     /*let id = u32::from_be_bytes(
@@ -33,7 +33,7 @@ pub fn parse<'a>(
 
     let (old, old_data_end) = get_old_tuple_data(&data[8..], &relation, &arena)?;
 
-    let new_data = get_new_tuple_data(&data[old_data_end + 8..], &arena, &relation)?;
+    let new_data = get_new_tuple_data(&data[old_data_end + 8..], &arena, &relation.inner.fields)?;
 
     Ok(ChangeEvent {
         op: cdc_avro::Op::Update { old, row: new_data },
@@ -46,13 +46,9 @@ mod test {
     use std::collections::HashMap;
 
     use bumpalo::{Bump, collections::vec, vec};
-    use cdc_avro::{ChangeEvent, PgValue, RowEntry};
+    use cdc_avro::{ChangeEvent, Field, FieldKind, PgValue, Relation};
 
-    use crate::decoder::{
-        common,
-        relation::{Field, FieldKind, Relation},
-        update::parse,
-    };
+    use crate::decoder::{common, update::parse};
 
     #[test]
     fn simple_update_key() {
@@ -73,8 +69,8 @@ mod test {
             b'h', b'e', b'l', b'l', b'o', // Text hello
         ]);
 
-        let relation_map = common::get_example_rel_map();
         let arena = Bump::new();
+        let relation_map = common::get_example_rel_map_keys(&arena);
 
         let event = parse(&data, &relation_map, &arena);
 
@@ -82,14 +78,8 @@ mod test {
             op: cdc_avro::Op::Update {
                 old: bumpalo::vec![in &arena;PgValue::Int4(1)],
                 row: vec![in &arena;
-                    RowEntry {
-                        key: "id",
-                        value: cdc_avro::PgValue::Int4(1),
-                    },
-                    RowEntry {
-                        key: "name",
-                        value: cdc_avro::PgValue::Text("hello"),
-                    },
+                    PgValue::Int4(1),
+                    PgValue::Text("hello"),
                 ],
             },
             rel: 1,
@@ -121,7 +111,7 @@ mod test {
 
         let arena = Bump::with_capacity(1024);
 
-        let relation_map = common::get_example_rel_map();
+        let relation_map = common::get_example_rel_map(&arena);
 
         let event = parse(&data, &relation_map, &arena);
 
@@ -133,14 +123,8 @@ mod test {
                 ],
 
                 row: vec![ in &arena;
-                    RowEntry {
-                        key: "id",
-                        value: cdc_avro::PgValue::Int4(1),
-                    },
-                    RowEntry {
-                        key: "name",
-                        value: cdc_avro::PgValue::Text("hello"),
-                    },
+                    PgValue::Int4(1),
+                    PgValue::Text("hello"),
                 ],
             },
             rel: 1,

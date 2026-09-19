@@ -1,38 +1,40 @@
 #[cfg(test)]
 use ahash::RandomState;
 use bumpalo::{Bump, collections::Vec};
-use cdc_avro::{PgValue, ReplicaKind};
+use cdc_avro::{Field, PgValue, ReplicaKind};
 
 use crate::decoder::{
     DecoderError::{self, WrongOldTupleKey},
-    relation::Relation,
+    relation::RelationData,
     tuple_data,
 };
 use simdutf8::basic::from_utf8 as simd_from_utf8;
 
 #[cfg(test)]
-use crate::decoder::relation::{Field, FieldKind, KeyField};
+use crate::decoder::relation::KeyField;
+#[cfg(test)]
+use cdc_avro::{FieldKind, Relation};
 
 pub fn get_old_tuple_data<'a>(
     data: &'a [u8],
-    relation: &'a Relation,
+    relation: &'a RelationData,
     arena: &'a Bump,
 ) -> Result<(Vec<'a, PgValue<'a>>, usize), DecoderError> {
     match data[0] {
         b'K' => {
-            if relation.replica_id != ReplicaKind::Keys {
+            if relation.inner.replica_id != ReplicaKind::Keys {
                 return Err(DecoderError::WrongOldTupleKind(ReplicaKind::Keys));
             }
 
-            let (keys, size) = tuple_data::parse(&data[1..], arena, relation)?;
+            let (keys, size) = tuple_data::parse(&data[1..], arena, &relation.key_fields)?;
             Ok((keys, size + 1))
         }
         b'O' => {
-            if relation.replica_id != ReplicaKind::Row {
+            if relation.inner.replica_id != ReplicaKind::Row {
                 return Err(DecoderError::WrongOldTupleKind(ReplicaKind::Row));
             }
 
-            let (row, size) = tuple_data::parse(&data[1..], arena, relation)?;
+            let (row, size) = tuple_data::parse(&data[1..], arena, &relation.inner.fields)?;
             Ok((row, size + 1))
         }
         a => Err(WrongOldTupleKey(a)),
@@ -42,13 +44,13 @@ pub fn get_old_tuple_data<'a>(
 pub fn get_new_tuple_data<'a>(
     data: &'a [u8],
     arena: &'a Bump,
-    relation: &'a Relation,
+    fields: &'a [Field],
 ) -> Result<bumpalo::collections::Vec<'a, PgValue<'a>>, DecoderError> {
     if data[0] != b'N' {
         return Err(DecoderError::WrongNewTupleKey(data[0]));
     }
 
-    let (tuple, _) = tuple_data::parse(&data[1..], arena, relation)?;
+    let (tuple, _) = tuple_data::parse(&data[1..], arena, fields)?;
     Ok(tuple)
 }
 
@@ -98,21 +100,22 @@ fn parse_scalar_simd(data: &[u8]) -> &str {
 }
 
 #[cfg(test)]
-pub fn get_example_rel_map() -> std::collections::HashMap<u32, Relation, RandomState> {
+pub fn get_example_rel_map(
+    arena: &Bump,
+) -> std::collections::HashMap<u32, RelationData, RandomState> {
     let mut relation_map = std::collections::HashMap::default();
-    relation_map.insert(1u32, get_example_rel());
+    relation_map.insert(1u32, get_example_rel_data(arena));
 
     relation_map
 }
 
 #[cfg(test)]
-pub fn get_example_rel() -> Relation {
+pub fn get_example_rel(arena: &Bump) -> Relation {
     Relation {
         relation_oid: 1,
-        namespace: "public".to_string(),
-        relname: "users".to_string(),
+        name: "users".to_string(),
         replica_id: ReplicaKind::Row,
-        fields: vec![
+        fields: bumpalo::vec![in arena;
             Field {
                 name: "id".to_string(),
                 is_key: true,
@@ -124,36 +127,84 @@ pub fn get_example_rel() -> Relation {
                 kind: FieldKind::Text,
             },
         ],
-        key_fields: vec![KeyField {
-            name: "id".to_string(),
-            kind: FieldKind::Int4,
-        }],
     }
 }
 
 #[cfg(test)]
-pub fn col_byte_id<'a>() -> RowEntry<'a> {
-    RowEntry {
-        key: "id",
-        value: cdc_avro::PgValue::Int4(1),
+pub fn get_example_rel_data(arena: &Bump) -> RelationData {
+    RelationData {
+        inner: get_example_rel(arena),
+        key_fields: bumpalo::vec![in arena;
+            KeyField {
+                name: "id".to_string(),
+                kind: FieldKind::Int4,
+            }
+        ],
     }
 }
 
 #[cfg(test)]
-pub fn col_text_name<'a>() -> RowEntry<'a> {
-    RowEntry {
-        key: "name",
-        value: cdc_avro::PgValue::Text("hello"),
+pub fn get_example_rel_map_keys(
+    arena: &Bump,
+) -> std::collections::HashMap<u32, RelationData, RandomState> {
+    let mut relation_map = std::collections::HashMap::default();
+    relation_map.insert(1u32, get_example_rel_data_keys(arena));
+
+    relation_map
+}
+
+#[cfg(test)]
+pub fn get_example_rel_keys(arena: &Bump) -> Relation {
+    Relation {
+        relation_oid: 1,
+        name: "users".to_string(),
+        replica_id: ReplicaKind::Keys,
+        fields: bumpalo::vec![in arena;
+            Field {
+                name: "id".to_string(),
+                is_key: true,
+                kind: FieldKind::Int4,
+            },
+            Field {
+                name: "name".to_string(),
+                is_key: false,
+                kind: FieldKind::Text,
+            },
+        ],
     }
+}
+
+#[cfg(test)]
+pub fn get_example_rel_data_keys(arena: &Bump) -> RelationData {
+    RelationData {
+        inner: get_example_rel_keys(arena),
+        key_fields: bumpalo::vec![in arena;
+            KeyField {
+                name: "id".to_string(),
+                kind: FieldKind::Int4,
+            }
+        ],
+    }
+}
+
+#[cfg(test)]
+pub fn col_byte_id<'a>() -> PgValue<'a> {
+    cdc_avro::PgValue::Int4(1)
+}
+
+#[cfg(test)]
+pub fn col_text_name<'a>() -> PgValue<'a> {
+    cdc_avro::PgValue::Text("hello")
 }
 
 #[cfg(test)]
 mod test {
     use bumpalo::{Bump, vec};
-    use cdc_avro::{OldDataKind, OverrideData, PgValue, RowEntry};
+    use cdc_avro::PgValue;
 
     use crate::decoder::common::{
-        col_byte_id, col_text_name, get_example_rel, get_new_tuple_data, get_old_tuple_data,
+        col_byte_id, col_text_name, get_example_rel, get_example_rel_data,
+        get_example_rel_data_keys, get_new_tuple_data, get_old_tuple_data,
     };
 
     #[test]
@@ -162,7 +213,7 @@ mod test {
 
         let arena = Bump::new();
 
-        let example_rel = get_example_rel();
+        let example_rel = get_example_rel_data(&arena);
 
         let old_tuple = get_old_tuple_data(&data, &example_rel, &arena);
         let old_tuple_manual = (vec![in &arena], 3);
@@ -176,7 +227,7 @@ mod test {
 
         let arena = Bump::new();
 
-        let example_rel = get_example_rel();
+        let example_rel = get_example_rel_data_keys(&arena);
 
         let key_tuple = get_old_tuple_data(&data, &example_rel, &arena);
         let key_tuple_manual = (vec![in &arena], 3);
@@ -197,7 +248,7 @@ mod test {
         ];
 
         let arena = Bump::new();
-        let example_rel = get_example_rel();
+        let example_rel = get_example_rel_data(&arena);
 
         let old_tuple = get_old_tuple_data(&data, &example_rel, &arena);
 
@@ -225,9 +276,9 @@ mod test {
 
         let arena = Bump::new();
 
-        let example_rel = get_example_rel();
+        let example_rel = get_example_rel_data(&arena);
 
-        let new_tuple = get_new_tuple_data(&data, &arena, &example_rel);
+        let new_tuple = get_new_tuple_data(&data, &arena, &example_rel.inner.fields);
         let new_tuple_manual = vec![
         in &arena;
             col_byte_id(),

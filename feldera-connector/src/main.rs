@@ -51,13 +51,13 @@ impl<'a> FelderaEvent<'a> {
         for op in batch.into_iter() {
             match op.op {
                 cdc_avro::Op::Insert { row } => result.push(FelderaEvent::Insert(row)),
-                cdc_avro::Op::Update { old_k, old, row } => {
+                cdc_avro::Op::Update { old, row } => {
                     // TODO! Add delete data
 
                     //result.push(FelderaEvent::Delete());
                     //result.push(FelderaEvent::Insert(row));
                 }
-                cdc_avro::Op::Delete { old_k, old } => { /*TODO: Add delete*//*result.push(FelderaEvent::Delete());*/
+                cdc_avro::Op::Delete { old } => { /*TODO: Add delete*//*result.push(FelderaEvent::Delete());*/
                 }
             }
         }

@@ -1,7 +1,7 @@
 use anyhow::Result;
 
 use bumpalo::Bump;
-use cdc_avro::ChangeEvent;
+use cdc_avro::{ChangeEvent, Relation};
 use cdc_wal_reader::{Producer as CdcProducer, ReplicationConfig};
 use rdkafka::ClientConfig;
 use rdkafka::producer::{FutureProducer, FutureRecord, Producer};
@@ -76,12 +76,13 @@ impl CdcProducer for KafkaProducer {
 
     async fn on_relation<'a>(
         &mut self,
-        relation: &cdc_wal_reader::decoder::relation::Relation,
+        relation: &Relation<'a>,
     ) -> std::prelude::v1::Result<(), String> {
-        let relation_bin = relation.to_avro();
-        let future_record = FutureRecord::to(&format!("relations/{}", relation.relation_oid))
+        let relation_bin = relation.to_avro().map_err(|e| e.to_string())?;
+        let rel_topic = format!("relations/{}", relation.relation_oid);
+        let future_record = FutureRecord::to(&rel_topic)
             .key(&self.key)
-            .payload(relation_bin);
+            .payload(&relation_bin);
 
         self.inner
             .send(future_record, std::time::Duration::from_secs(5))

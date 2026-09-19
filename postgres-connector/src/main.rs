@@ -2,7 +2,7 @@ use cdc_avro::{ChangeEvent, PgValue};
 use cdc_sink::{KafkaConfig, KafkaSink, TableNames};
 use config::Config;
 use serde::Deserialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use thiserror::Error;
 use tokio_postgres::{
     Connection, NoTls, Socket,
@@ -34,8 +34,8 @@ async fn main() {
 
 #[derive(Debug, Error)]
 enum BridgeError {
-    #[error("A")]
-    A,
+    #[error("Found unknown relation oid")]
+    UnknowRelation,
 }
 
 #[derive(Deserialize)]
@@ -66,7 +66,7 @@ pub struct PostgresSink {
     pk_cache: HashMap<String, Vec<String>>,
     insert_stmt_cache: InsertStatementCache,
     delete_stmt_cache: DeleteStatementCache,
-    table_names: TableNames,
+    relation_cache: RelationCache,
 }
 
 impl PostgresSink {
@@ -79,7 +79,7 @@ impl PostgresSink {
             pk_cache: HashMap::new(),
             insert_stmt_cache: InsertStatementCache::new(),
             delete_stmt_cache: DeleteStatementCache::new(),
-            table_names: TableNames::new(),
+            relation_cache: RelationCache::new(),
         })
     }
 
@@ -92,7 +92,7 @@ impl PostgresSink {
                         &self.client,
                         event.rel,
                         &["id", "name", "email"],
-                        &self.table_names,
+                        &self.relation_cache.table_names,
                     )
                     .await
                     .expect("Failed to generate insert statement");
@@ -135,17 +135,28 @@ impl PostgresSink {
             cdc_avro::Op::Delete { old } => {
                 let delete_stmt = self
                     .delete_stmt_cache
-                    .get(&self.client, event.rel, &self.table_names)
+                    .get(&self.client, event.rel, &self.relation_cache.table_names)
                     .await
                     .expect("Failed to generate insert statement");
 
-                let keys: Vec<ToSqlWrapper> = match old_k {
-                    cdc_avro::ReplicaKind::Keys => {
+                let key_identity = self.relation_cache.identities.get(&event.rel);
+
+                let keys: Vec<ToSqlWrapper> = match key_identity {
+                    Some(RelationIdentity::Full) => {
                         old.into_iter().map(|v| ToSqlWrapper(v)).collect()
                     }
-                    cdc_avro::ReplicaKind::Row => {
-                        todo!()
-                    }
+                    Some(RelationIdentity::Keys(ids)) => old
+                        .into_iter()
+                        .enumerate()
+                        .filter_map(|(i, v)| {
+                            if ids.contains(&i) {
+                                Some(ToSqlWrapper(v))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect(),
+                    None => return Err(BridgeError::UnknowRelation),
                 };
 
                 let keys_ref: Vec<&(dyn ToSql + Sync)> =
@@ -208,4 +219,23 @@ impl<'a> ToSql for ToSqlWrapper<'a> {
             PgValue::Int4(n) => n.to_sql_checked(ty, out),
         }
     }
+}
+
+pub struct RelationCache {
+    identities: HashMap<u32, RelationIdentity>,
+    table_names: TableNames,
+}
+
+impl RelationCache {
+    pub fn new() -> Self {
+        Self {
+            identities: HashMap::new(),
+            table_names: TableNames::new(),
+        }
+    }
+}
+
+pub enum RelationIdentity {
+    Full,
+    Keys(HashSet<usize>),
 }

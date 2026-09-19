@@ -53,13 +53,6 @@ impl<'a> ChangeEvent<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Serialize_repr)]
-#[repr(u8)]
-pub enum ReplicaKind {
-    Keys,
-    Row,
-}
-
 const CHANGE_EVENT_SCHEMA_STR: &str = r#"{"type":"record","name":"ChangeEvent","fields":[{"name":"op","type":[{"type":"record","name":"Insert","fields":[{"name":"row","type":{"type":"array","items":[{"type":"record","name":"Text","fields":[{"name":"Text","type":"string"}]},{"type":"record","name":"Int4","fields":[{"name":"Int4","type":"int"}]}]}}]},{"type":"record","name":"Update","fields":[{"name":"old_k","type":"int"},{"name":"old","type":{"type":"array","items":["Text","Int4"]}},{"name":"row","type":{"type":"array","items":["Text","Int4"]}}]},{"type":"record","name":"Delete","fields":[{"name":"old_k","type":"int"},{"name":"old","type":{"type":"array","items":["Text","Int4"]}}]}]},{"name":"rel","type":"int"}]}"#;
 
 const RELATION_SCHEMA_STR: &str = r#"{"type":"record","name":"Relation","fields":[{"name":"oid","type":"int"},{"name":"namespace","type":"string"},{"name":"relname","type":"string"},{"name":"fields","type":{"type":"array","items":{"type":"record","name":"Field","fields":[{"name":"name","type":"string"},{"name":"kind","type":"string"},{"name":"is_key","type":"boolean"}]}}}]}"#;
@@ -69,6 +62,68 @@ const CHANGE_EVENT_SCHEMA: LazyLock<Schema> = LazyLock::new(|| {
         .parse()
         .expect("Failed to parse Avro schema")
 });
+
+#[derive(Serialize, Debug, Clone, PartialEq)]
+pub struct Relation<'a> {
+    pub relation_oid: u32,
+    pub name: String,
+    pub fields: Vec<'a, Field>,
+    pub replica_id: ReplicaKind,
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq)]
+pub struct Field {
+    pub is_key: bool,
+    pub name: String,
+    pub kind: FieldKind,
+}
+
+pub trait FieldAccess {
+    fn get_name(&self) -> &str;
+    fn get_kind(&self) -> FieldKind;
+}
+
+impl FieldAccess for Field {
+    #[inline(always)]
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
+    #[inline(always)]
+    fn get_kind(&self) -> FieldKind {
+        self.kind
+    }
+}
+
+#[derive(Serialize, Copy, Clone, Debug, PartialEq)]
+pub enum FieldKind {
+    Int4,
+    Text,
+}
+
+impl<'a> Relation<'a> {
+    pub fn from_avro(slice: &[u8]) -> Result<Self, FromAvroError> {
+        /*Ok(serde_avro_fast::from_datum_slice::<ChangeEvent<'_>>(
+            slice,
+            &CHANGE_EVENT_SCHEMA,
+        )?)*/
+        Err(FromAvroError::NoEvents)
+    }
+
+    pub fn to_avro(&self) -> Result<std::vec::Vec<u8>, serde_avro_fast::ser::SerError> {
+        let schema = &CHANGE_EVENT_SCHEMA;
+
+        let mut config = serde_avro_fast::ser::SerializerConfig::new(schema);
+        serde_avro_fast::to_datum(&self, std::vec::Vec::with_capacity(256), &mut config)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize_repr)]
+#[repr(u8)]
+pub enum ReplicaKind {
+    Keys,
+    Row,
+}
 
 const RELATION_SCHEMA: LazyLock<Schema> = LazyLock::new(|| {
     CHANGE_EVENT_SCHEMA_STR

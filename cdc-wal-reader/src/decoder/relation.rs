@@ -1,24 +1,22 @@
+use bumpalo::collections::Vec;
+use bumpalo::{Bump, collections::CollectIn};
 use bytes::Bytes;
-use cdc_avro::ReplicaKind;
+use cdc_avro::{Field, FieldAccess, FieldKind, Relation, ReplicaKind};
 use std::ffi::CStr;
 
 use crate::decoder::DecoderError;
 
 #[derive(Debug, PartialEq)]
-pub struct Relation {
-    pub relation_oid: u32,
-    pub namespace: String,
-    pub relname: String,
-    pub fields: Vec<Field>,
-    pub replica_id: ReplicaKind,
+pub struct RelationData<'a> {
+    pub inner: Relation<'a>,
 
     /// A subset of above, they are the fields marked as keys, for when only keys
     /// are searched for
-    pub key_fields: Vec<KeyField>,
+    pub key_fields: Vec<'a, KeyField>,
 }
 
-impl Relation {
-    pub fn parse(data: Bytes) -> Result<Relation, DecoderError> {
+impl<'a> RelationData<'a> {
+    pub fn parse(data: Bytes, arena: &'a Bump) -> Result<RelationData<'a>, DecoderError> {
         let relation_oid = u32::from_be_bytes(
             data[1..5]
                 .try_into()
@@ -48,12 +46,12 @@ impl Relation {
         );
 
         let mut col_start_id = replica_id_pos + 3;
-        let mut fields = Vec::with_capacity(cols as usize);
+        let mut fields = bumpalo::collections::Vec::with_capacity_in(cols as usize, arena);
 
         for _ in 0..cols {
-            match Field::parse(&data[col_start_id..]) {
-                Ok(FieldParseResult::Physical(field)) => {
-                    col_start_id += field.byte_size();
+            match parse_field(&data[col_start_id..]) {
+                Ok(FieldParseResult::Physical((field, bytes))) => {
+                    col_start_id += bytes;
                     fields.push(field);
                 }
                 Ok(FieldParseResult::Logical(b)) => {
@@ -65,10 +63,7 @@ impl Relation {
             }
         }
 
-        Ok(Relation {
-            relation_oid,
-            namespace,
-            relname,
+        Ok(RelationData {
             key_fields: fields
                 .iter()
                 .filter_map(|f| {
@@ -81,19 +76,15 @@ impl Relation {
                         None
                     }
                 })
-                .collect(),
-
-            fields,
-            replica_id,
+                .collect_in(arena),
+            inner: Relation {
+                relation_oid,
+                name: relname,
+                fields,
+                replica_id,
+            },
         })
     }
-}
-
-#[derive(Debug, PartialEq)]
-pub struct Field {
-    pub is_key: bool,
-    pub name: String,
-    pub kind: FieldKind,
 }
 
 // We already know those are keys, we don't need the is_key
@@ -103,6 +94,16 @@ pub struct KeyField {
     pub kind: FieldKind,
 }
 
+impl FieldAccess for KeyField {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+
+    fn get_kind(&self) -> FieldKind {
+        self.kind
+    }
+}
+
 /**  A field in a relation can be physical (in that it exists on disk) or logical
  * (a computed value of sorts), logical fields aren't present in WAL outputs
  * so we are going to ignore them. However, we do need to know the ammount of space
@@ -110,78 +111,72 @@ pub struct KeyField {
  */
 #[derive(Debug, PartialEq)]
 pub enum FieldParseResult {
-    Physical(Field),
+    Physical((Field, usize)),
     Logical(usize),
 }
 
-impl Field {
-    /// The Field might be logical, and thus not present, in those cases we don't
-    /// store it, but we need the size of it
-    fn parse(data: &[u8]) -> Result<FieldParseResult, DecoderError> {
-        let flag = data[0];
-        let name = CStr::from_bytes_until_nul(&data[1..])
-            .map_err(|_| DecoderError::TruncatedInput)?
-            .to_str()?
-            .to_string();
+/// The Field might be logical, and thus not present, in those cases we don't
+/// store it, but we need the size of it
+fn parse_field(data: &[u8]) -> Result<FieldParseResult, DecoderError> {
+    let flag = data[0];
+    let name = CStr::from_bytes_until_nul(&data[1..])
+        .map_err(|_| DecoderError::TruncatedInput)?
+        .to_str()?
+        .to_string();
 
-        let is_key = match flag {
-            0 => false,
-            1 => true,
-            // mean a logical field
-            2 | 3 => return Ok(FieldParseResult::Logical(Self::byte_size_len(name.len()))),
-            a => return Err(DecoderError::WrongFieldDataFlag(a)),
-        };
+    let l_name = name.len();
 
-        let after_name = 1 + name.len() + 1;
+    let is_key = match flag {
+        0 => false,
+        1 => true,
+        // mean a logical field
+        2 | 3 => return Ok(FieldParseResult::Logical(byte_size_len(l_name))),
+        a => return Err(DecoderError::WrongFieldDataFlag(a)),
+    };
 
-        let t_oid = u32::from_be_bytes(
-            data[after_name..after_name + 4]
-                .try_into()
-                .map_err(|_| DecoderError::TruncatedInput)?,
-        );
+    let after_name = 1 + name.len() + 1;
 
-        let t_mod = u32::from_be_bytes(
-            data[after_name + 4..after_name + 8]
-                .try_into()
-                .map_err(|_| DecoderError::TruncatedInput)?,
-        );
+    let t_oid = u32::from_be_bytes(
+        data[after_name..after_name + 4]
+            .try_into()
+            .map_err(|_| DecoderError::TruncatedInput)?,
+    );
 
-        Ok(FieldParseResult::Physical(Field {
+    let t_mod = u32::from_be_bytes(
+        data[after_name + 4..after_name + 8]
+            .try_into()
+            .map_err(|_| DecoderError::TruncatedInput)?,
+    );
+
+    Ok(FieldParseResult::Physical((
+        Field {
             is_key,
             name,
-            kind: FieldKind::from_oid_mod(t_oid, t_mod)?,
-        }))
-    }
-
-    fn byte_size_len(str_len: usize) -> usize {
-        10 + str_len
-    }
-
-    fn byte_size(&self) -> usize {
-        Self::byte_size_len(self.name.len())
-    }
+            kind: kind_from_oid_mod(t_oid, t_mod)?,
+        },
+        byte_size_len(l_name),
+    )))
 }
 
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub enum FieldKind {
-    Int4,
-    Text,
+fn byte_size_len(str_len: usize) -> usize {
+    10 + str_len
 }
 
-impl FieldKind {
-    fn from_oid_mod(t_oid: u32, t_mod: u32) -> Result<Self, DecoderError> {
-        match t_oid {
-            23 => Ok(Self::Int4),
-            25 => Ok(Self::Text),
-            a => Err(DecoderError::InvalidOid(a)),
-        }
+fn kind_from_oid_mod(t_oid: u32, t_mod: u32) -> Result<FieldKind, DecoderError> {
+    match t_oid {
+        23 => Ok(FieldKind::Int4),
+        25 => Ok(FieldKind::Text),
+        a => Err(DecoderError::InvalidOid(a)),
     }
 }
 
 #[cfg(test)]
 mod test {
+    use bumpalo::{Bump, vec};
+
     use crate::decoder::relation::{
-        Field, FieldKind, FieldParseResult, KeyField, Relation, ReplicaKind,
+        Field, FieldKind, FieldParseResult, KeyField, Relation, RelationData, ReplicaKind,
+        parse_field,
     };
 
     fn field_id() -> Field {
@@ -214,15 +209,19 @@ mod test {
             0, 0, 0, 23, // Type oid (int4)
             0, 0, 0, 0, // Attrmod
         ]);
-        let relation = Relation::parse(data);
 
-        let relation_manual = Relation {
-            relation_oid: 1,
-            namespace: "public".to_string(),
-            relname: "users".to_string(),
-            replica_id: ReplicaKind::Keys,
-            fields: vec![field_id()],
-            key_fields: vec![key_field_id()],
+        let arena = Bump::new();
+
+        let relation = RelationData::parse(data, &arena);
+
+        let relation_manual = RelationData {
+            key_fields: vec![in &arena; key_field_id()],
+            inner: Relation {
+                relation_oid: 1,
+                name: "users".to_string(),
+                replica_id: ReplicaKind::Keys,
+                fields: vec![in &arena; field_id()],
+            },
         };
 
         assert_eq!(relation, Ok(relation_manual));
@@ -236,8 +235,8 @@ mod test {
             0, 0, 0, 23, // Type oid (int4)
             0, 0, 0, 0, // Attrmod
         ];
-        let field = Field::parse(&data);
+        let field = parse_field(&data);
 
-        assert_eq!(field, Ok(FieldParseResult::Physical(field_id())));
+        assert_eq!(field, Ok(FieldParseResult::Physical((field_id(), 12))));
     }
 }

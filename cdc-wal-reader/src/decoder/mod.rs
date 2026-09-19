@@ -1,9 +1,7 @@
 use std::str::Utf8Error;
 
-use cdc_avro::ReplicaKind;
+use cdc_avro::{FieldKind, ReplicaKind};
 use thiserror::Error;
-
-use crate::decoder::relation::FieldKind;
 
 pub mod delete;
 pub mod insert;
