@@ -603,6 +603,7 @@ dependencies = [
  "cdc-avro",
  "cdc-wal-reader",
  "config",
+ "futures-util",
  "rdkafka",
  "serde",
  "thiserror 2.0.20",

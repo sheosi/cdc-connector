@@ -37,6 +37,7 @@ impl KafkaConfig {
             .set("boostrap.servers", self.brokers)
             .set("enable.partition.eof", "false")
             .set("session.timeout.ms", "6000")
+            .set("isolation.level", "read_committed")
             .set_log_level(log_level)
             .create()
             .expect("Consumer creation failed");
@@ -91,9 +92,9 @@ impl KafkaClient {
     }
 
     pub async fn consume_from_kafka<S: KafkaSink>(&self, mut sink: S) {
-        let topic = format!("");
+        let topic = format!("{}.event", self.topic.as_str());
         self.consumer
-            .subscribe(&vec![self.topic.as_str()])
+            .subscribe(&vec![topic.as_str()])
             .expect("Can't subscribe to specified topics");
 
         let mut stream = self.consumer.stream();

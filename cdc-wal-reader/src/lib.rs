@@ -3,9 +3,10 @@ use std::collections::HashMap;
 use ahash::RandomState;
 use bumpalo::Bump;
 use cdc_avro::{ChangeEvent, Relation};
-use pgwire_replication::{ReplicationClient, ReplicationEvent};
+use pgwire_replication::{Lsn, ReplicationClient, ReplicationEvent};
 
 pub use pgwire_replication::ReplicationConfig;
+use serde::Deserialize;
 use tokio_postgres::NoTls;
 
 use crate::decoder::{DecoderError, relation::RelationData};
@@ -14,9 +15,10 @@ use crate::decoder::{DecoderError, relation::RelationData};
 pub mod decoder;
 
 async fn send_to_producer<'a, P>(
+    client: &ReplicationClient,
     event_res: Result<(ChangeEvent<'a>, &'a RelationData<'a>), DecoderError>,
     producer: &P,
-    lsn: i32,
+    lsn: u64,
 ) where
     P: Producer,
 {
@@ -24,6 +26,8 @@ async fn send_to_producer<'a, P>(
         Ok((event, relation)) => {
             if let Err(e) = producer.send(&relation.inner, event, lsn).await {
                 eprintln!("Producer had an error {}", e);
+            } else {
+                client.update_applied_lsn(Lsn(lsn));
             }
         }
         Err(e) => {
@@ -32,15 +36,36 @@ async fn send_to_producer<'a, P>(
     }
 }
 
+#[derive(Deserialize)]
+pub struct PostgresConfig {
+    host: String,
+    user: String,
+    password: String,
+    slot_name: String,
+}
+
 pub async fn start_wal_input<P: Producer>(
-    config: ReplicationConfig,
+    own_config: PostgresConfig,
+    last_lsn: u64,
     replica_identity_full: bool,
     mut producer: P,
 ) -> Result<(), pgwire_replication::PgWireError> {
-    configure_replica_identity(&config, replica_identity_full)
+    let pg_config = ReplicationConfig::new(
+        own_config.host,
+        own_config.user,
+        own_config.password,  // host, user, password
+        "cdc",                // dbname
+        own_config.slot_name, // slot name
+        "cdc_pub",            // publication
+    )
+    .with_start_lsn(Lsn(last_lsn))
+    .with_port(5400);
+
+    configure_replica_identity(&pg_config, replica_identity_full)
         .await
         .unwrap();
-    let mut client = ReplicationClient::connect(config).await?;
+    let mut client = ReplicationClient::connect(pg_config).await?;
+
     let arena = Bump::with_capacity(1024);
     let mut relation_map = HashMap::<u32, RelationData, RandomState>::default();
 
@@ -69,6 +94,7 @@ pub async fn start_wal_input<P: Producer>(
                 b'I' => {
                     println!("XLogData wal_end={} bytes={:?}", wal_end, &data);
                     send_to_producer(
+                        &client,
                         decoder::insert::parse(&data, &relation_map, &arena),
                         &producer,
                         0,
@@ -78,6 +104,7 @@ pub async fn start_wal_input<P: Producer>(
                 b'D' => {
                     println!("Remove bytes={:?}", &data);
                     send_to_producer(
+                        &client,
                         decoder::delete::parse(&data, &relation_map, &arena),
                         &producer,
                         0,
@@ -87,6 +114,7 @@ pub async fn start_wal_input<P: Producer>(
                 b'U' => {
                     println!("Delete bytes={:?}", &data);
                     send_to_producer(
+                        &client,
                         decoder::update::parse(&data, &relation_map, &arena),
                         &producer,
                         0,
@@ -172,7 +200,7 @@ pub trait Producer: Send {
         &self,
         relation: &Relation<'a>,
         event: ChangeEvent<'a>,
-        lsn: i32,
+        lsn: u64,
     ) -> impl std::future::Future<Output = Result<(), String>>;
 
     fn on_relation<'a>(
