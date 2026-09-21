@@ -52,8 +52,8 @@ mod test {
 
     use crate::decoder::{
         common::{
-            self, get_example_rel, get_example_rel_data, get_example_rel_data_keys,
-            get_example_rel_keys,
+            self, col_byte_id, col_text_name, get_example_rel, get_example_rel_data,
+            get_example_rel_data_keys, get_example_rel_keys,
         },
         update::parse,
     };
@@ -82,12 +82,14 @@ mod test {
 
         let event = parse(&data, &relation_map, &arena);
 
+        let text = "hello";
+
         let event_example = ChangeEvent {
             op: cdc_avro::Op::Update {
                 old: bumpalo::vec![in &arena;PgValue::Int4(1)],
                 row: vec![in &arena;
-                    PgValue::Int4(1),
-                    PgValue::Text("hello"),
+                    col_byte_id(),
+                    col_text_name(),
                 ],
             },
             rel: 1,
@@ -129,13 +131,13 @@ mod test {
         let event_example = ChangeEvent {
             op: cdc_avro::Op::Update {
                 old: vec![ in &arena;
-                    cdc_avro::PgValue::Int4(1),
-                    cdc_avro::PgValue::Text("hello"),
+                    col_byte_id(),
+                    col_text_name(),
                 ],
 
                 row: vec![ in &arena;
-                    PgValue::Int4(1),
-                    PgValue::Text("hello"),
+                    col_byte_id(),
+                    col_text_name(),
                 ],
             },
             rel: 1,

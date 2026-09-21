@@ -16,7 +16,7 @@ pub struct RelationData<'a> {
 }
 
 impl<'a> RelationData<'a> {
-    pub fn parse(data: Bytes, arena: &'a Bump) -> Result<RelationData<'a>, DecoderError> {
+    pub fn parse(data: &Bytes, arena: &'a Bump) -> Result<RelationData<'a>, DecoderError> {
         let relation_oid = u32::from_be_bytes(
             data[1..5]
                 .try_into()
@@ -213,7 +213,7 @@ mod test {
 
         let arena = Bump::new();
 
-        let relation = RelationData::parse(data, &arena);
+        let relation = RelationData::parse(&data, &arena);
 
         let relation_manual = RelationData {
             key_fields: vec![in &arena; key_field_id()],

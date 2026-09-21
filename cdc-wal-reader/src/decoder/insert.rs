@@ -7,7 +7,7 @@ use cdc_avro::ChangeEvent;
 use crate::decoder::{DecoderError, common::get_new_tuple_data, relation::RelationData};
 
 pub fn parse<'a>(
-    data: &'a [u8],
+    data: &bytes::Bytes,
     relation_map: &'a HashMap<u32, RelationData, RandomState>,
     arena: &'a Bump,
 ) -> Result<(ChangeEvent<'a>, &'a RelationData<'a>), DecoderError> {
@@ -46,7 +46,7 @@ mod test {
     use bumpalo::vec;
 
     use crate::decoder::{
-        common::{self, get_example_rel, get_example_rel_data},
+        common::{self, col_byte_id, col_text_name, get_example_rel, get_example_rel_data},
         insert::parse,
         relation::{KeyField, RelationData},
     };
@@ -112,8 +112,8 @@ mod test {
         let event = parse(&data, &relation_map, &arena);
 
         let mut row = bumpalo::vec![in &arena;
-                PgValue::Int4(1),
-                PgValue::Text("hello")
+                col_byte_id(),
+                col_text_name()
         ];
 
         let event_example = ChangeEvent {
@@ -137,11 +137,14 @@ mod test {
         let relation_map = complex_relation_map(&arena);
 
         let event = parse(&data, &relation_map, &arena);
+        let val_id = "1";
+        let val_name = "ada";
+        let val_email = "ada@example.com";
 
         let row = bumpalo::vec![in &arena;
-            PgValue::Text("1"),
-            PgValue::Text("ada"),
-            PgValue::Text("ada@example.com")
+            PgValue::Text{ptr: val_id.as_ptr(), len: val_id.len()},
+            PgValue::Text{ptr: val_name.as_ptr(), len: val_name.len()},
+            PgValue::Text{ptr: val_email.as_ptr(), len: val_email.len()}
         ];
 
         let event_example = ChangeEvent {

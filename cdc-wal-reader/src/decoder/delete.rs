@@ -49,7 +49,9 @@ mod test {
     use cdc_avro::{ChangeEvent, PgValue};
 
     use crate::decoder::{
-        common::{self, get_example_rel_data, get_example_rel_data_keys},
+        common::{
+            self, col_byte_id, col_text_name, get_example_rel_data, get_example_rel_data_keys,
+        },
         delete::parse,
     };
 
@@ -106,8 +108,8 @@ mod test {
         let event_example = ChangeEvent {
             op: cdc_avro::Op::Delete {
                 old: vec![in &arena;
-                    PgValue::Int4(1),
-                    PgValue::Text("hello")
+                    col_byte_id(),
+                    col_text_name()
                 ],
             },
             rel: 1,

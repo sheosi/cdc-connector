@@ -36,6 +36,16 @@ async fn send_to_producer<'a, P>(
     }
 }
 
+fn might_add<'a>(
+    event: Result<ChangeEvent<'a>, DecoderError>,
+    buffer: &mut bumpalo::collections::Vec<'a, ChangeEvent<'a>>,
+) {
+    match event {
+        Ok(e) => buffer.push(e),
+        Err(e) => eprintln!("Failed to parse event {}", e),
+    }
+}
+
 #[derive(Deserialize)]
 pub struct PostgresConfig {
     host: String,
@@ -66,65 +76,20 @@ pub async fn start_wal_input<P: Producer>(
         .unwrap();
     let mut client = ReplicationClient::connect(pg_config).await?;
 
-    let arena = Bump::with_capacity(1024);
+    let relations_arena = Bump::with_capacity(4096);
+    let data_arena = Bump::with_capacity(2048);
+    let events_arena = Bump::with_capacity(1024);
     let mut relation_map = HashMap::<u32, RelationData, RandomState>::default();
+
+    let mut txn_data = bumpalo::collections::Vec::with_capacity_in(5, &data_arena);
+    let mut txn_events = bumpalo::collections::Vec::with_capacity_in(5, &events_arena);
 
     while let Some(ev) = client.recv().await? {
         match ev {
-            ReplicationEvent::XLogData { wal_end, data, .. } => match data[0] {
-                b'R' => {
-                    if let Ok(relation) = decoder::relation::RelationData::parse(data, &arena) {
-                        println!("{:?}", &relation);
-
-                        if let Err(e) = producer.on_relation(&relation.inner).await {
-                            eprintln!("Failed to send relation: {}", e);
-                        }
-
-                        relation_map.insert(relation.inner.relation_oid, relation);
-                    }
-                }
-                b'B' => {
-                    println!("XLogData wal_end={} bytes={:?}", wal_end, &data);
-                    if let Ok(begin) = decoder::transactions::Begin::parse(data) {}
-                }
-                b'C' => {
-                    println!("XLogData wal_end={} bytes={:?}", wal_end, &data);
-                    if let Ok(begin) = decoder::transactions::Begin::parse(data) {}
-                }
-                b'I' => {
-                    println!("XLogData wal_end={} bytes={:?}", wal_end, &data);
-                    send_to_producer(
-                        &client,
-                        decoder::insert::parse(&data, &relation_map, &arena),
-                        &producer,
-                        0,
-                    )
-                    .await;
-                }
-                b'D' => {
-                    println!("Remove bytes={:?}", &data);
-                    send_to_producer(
-                        &client,
-                        decoder::delete::parse(&data, &relation_map, &arena),
-                        &producer,
-                        0,
-                    )
-                    .await;
-                }
-                b'U' => {
-                    println!("Delete bytes={:?}", &data);
-                    send_to_producer(
-                        &client,
-                        decoder::update::parse(&data, &relation_map, &arena),
-                        &producer,
-                        0,
-                    )
-                    .await;
-                }
-                _ => {
-                    println!("XLogData wal_end={} bytes={:?}", wal_end, data);
-                }
-            },
+            ReplicationEvent::XLogData { wal_end, data, .. } => {
+                println!("XLogData wal_end={} bytes={:?}", wal_end, &data);
+                txn_data.push(data);
+            }
             ReplicationEvent::KeepAlive { .. } => {
                 // heartbeat; crate handles reply
             }
@@ -139,6 +104,69 @@ pub async fn start_wal_input<P: Producer>(
                     transactional, lsn, prefix, content
                 );
             }
+
+            ReplicationEvent::Begin {
+                final_lsn,
+                xid,
+                commit_time_micros,
+            } => {}
+
+            ReplicationEvent::Commit {
+                lsn,
+                end_lsn,
+                commit_time_micros,
+            } => {
+                for data in txn_data.into_iter() {
+                    match data[0] {
+                        b'R' => {
+                            if let Ok(relation) =
+                                decoder::relation::RelationData::parse(&data, &relations_arena)
+                            {
+                                println!("{:?}", &relation);
+
+                                if let Err(e) = producer.on_relation(&relation.inner).await {
+                                    eprintln!("Failed to send relation: {}", e);
+                                }
+
+                                //relation_map.insert(relation.inner.relation_oid, relation);
+                            }
+                        }
+                        b'I' => {
+                            might_add(
+                                decoder::insert::parse(&data, &relation_map, &events_arena)
+                                    .map(|(a, _)| a),
+                                &mut txn_events,
+                            );
+                        }
+                        b'D' => {
+                            println!("Remove bytes={:?}", &data);
+
+                            send_to_producer(
+                                &client,
+                                decoder::delete::parse(&data, &relation_map, &events_arena),
+                                &producer,
+                                0,
+                            )
+                            .await;
+                        }
+                        b'U' => {
+                            println!("Delete bytes={:?}", &data);
+                            send_to_producer(
+                                &client,
+                                decoder::update::parse(&data, &relation_map, &events_arena),
+                                &producer,
+                                0,
+                            )
+                            .await;
+                        }
+                        _ => {}
+                    }
+                }
+
+                txn_events.clear();
+                txn_data = bumpalo::collections::Vec::with_capacity_in(5, &data_arena);
+            }
+
             ev => println!("other: {:?}", ev),
         }
     }

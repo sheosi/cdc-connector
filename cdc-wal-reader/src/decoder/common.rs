@@ -19,7 +19,7 @@ pub fn get_old_tuple_data<'a>(
     data: &'a [u8],
     relation: &'a RelationData,
     arena: &'a Bump,
-) -> Result<(Vec<'a, PgValue<'a>>, usize), DecoderError> {
+) -> Result<(Vec<'a, PgValue>, usize), DecoderError> {
     match data[0] {
         b'K' => {
             if relation.inner.replica_id != ReplicaKind::Keys {
@@ -42,10 +42,10 @@ pub fn get_old_tuple_data<'a>(
 }
 
 pub fn get_new_tuple_data<'a>(
-    data: &'a [u8],
+    data: &[u8],
     arena: &'a Bump,
     fields: &'a [Field],
-) -> Result<bumpalo::collections::Vec<'a, PgValue<'a>>, DecoderError> {
+) -> Result<bumpalo::collections::Vec<'a, PgValue>, DecoderError> {
     if data[0] != b'N' {
         return Err(DecoderError::WrongNewTupleKey(data[0]));
     }
@@ -190,13 +190,17 @@ pub fn get_example_rel_data_keys(arena: &Bump) -> RelationData {
 }
 
 #[cfg(test)]
-pub fn col_byte_id<'a>() -> PgValue<'a> {
+pub fn col_byte_id<'a>() -> PgValue {
     cdc_avro::PgValue::Int4(1)
 }
 
 #[cfg(test)]
-pub fn col_text_name<'a>() -> PgValue<'a> {
-    cdc_avro::PgValue::Text("hello")
+pub fn col_text_name<'a>() -> PgValue {
+    let text = "hello";
+    cdc_avro::PgValue::Text {
+        ptr: text.as_ptr(),
+        len: text.len(),
+    }
 }
 
 #[cfg(test)]
@@ -211,7 +215,7 @@ mod test {
 
     #[test]
     fn empty_old_tuple_data_key() {
-        let data = [b'O', 0, 0];
+        let data = bytes::Bytes::from_static(&[b'O', 0, 0]);
 
         let arena = Bump::new();
 
@@ -225,7 +229,7 @@ mod test {
 
     #[test]
     fn empty_key_tuple_data_key() {
-        let data = [b'K', 0, 0];
+        let data = bytes::Bytes::from_static(&[b'K', 0, 0]);
 
         let arena = Bump::new();
 
@@ -239,7 +243,7 @@ mod test {
 
     #[test]
     fn simple_old_tuple_data_object() {
-        let data = [
+        let data = bytes::Bytes::from_static(&[
             b'O', 0, 2, // Two columns
             // First col
             b'b', 0, 0, 0, 4, // Binary of size 4
@@ -247,7 +251,7 @@ mod test {
             // Second col
             b't', 0, 0, 0, 5, // Text of length 5
             b'h', b'e', b'l', b'l', b'o', // Text hello
-        ];
+        ]);
 
         let arena = Bump::new();
         let example_rel = get_example_rel_data(&arena);
@@ -256,8 +260,8 @@ mod test {
 
         let old_tuple_row = vec![
         in &arena;
-            PgValue::Int4(1),
-            PgValue::Text("hello")
+            col_byte_id(),
+            col_text_name()
         ];
         let old_tuple_manual = (old_tuple_row, 22);
 
@@ -266,7 +270,7 @@ mod test {
 
     #[test]
     fn simple_get_new_tuple_data() {
-        let data = [
+        let data = bytes::Bytes::from_static(&[
             b'N', 0, 2, // Two columns
             // First col
             b'b', 0, 0, 0, 4, // Binary of size 4
@@ -274,7 +278,7 @@ mod test {
             // Second col
             b't', 0, 0, 0, 5, // Text of length 5
             b'h', b'e', b'l', b'l', b'o', // Text hello
-        ];
+        ]);
 
         let arena = Bump::new();
 
