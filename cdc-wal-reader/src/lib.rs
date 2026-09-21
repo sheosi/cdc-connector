@@ -52,6 +52,13 @@ pub struct PostgresConfig {
     user: String,
     password: String,
     slot_name: String,
+
+    #[serde(default = "default_publication")]
+    publication: String,
+}
+
+fn default_publication() -> String {
+    "cdc_pub".to_string()
 }
 
 pub async fn start_wal_input<P: Producer>(
@@ -66,7 +73,7 @@ pub async fn start_wal_input<P: Producer>(
         own_config.password,  // host, user, password
         "cdc",                // dbname
         own_config.slot_name, // slot name
-        "cdc_pub",            // publication
+        own_config.publication,
     )
     .with_start_lsn(Lsn(last_lsn))
     .with_port(5400);
