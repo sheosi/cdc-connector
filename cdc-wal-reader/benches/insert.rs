@@ -84,7 +84,6 @@ fn bench(c: &mut Criterion) {
         inner: Relation {
             relation_oid: 12345,
             replica_id: cdc_avro::ReplicaKind::Keys,
-            namespace: "public".to_string(),
             name: "order_items".to_string(),
             fields: bumpalo::vec![in &arena;
                 Field {
@@ -125,7 +124,7 @@ fn bench(c: &mut Criterion) {
         }],
     };
 
-    let data = bytes::Bytes::copy_from_slice(&INSERT_DATA);
+    let data = bytes::Bytes::from_static(&INSERT_DATA);
     let mut rel_map = HashMap::default();
     rel_map.insert(12345, order_items_rel);
 

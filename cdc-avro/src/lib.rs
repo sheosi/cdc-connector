@@ -9,14 +9,14 @@ use thiserror::Error;
 #[derive(Serialize, Debug, Clone, PartialEq)]
 pub enum Op<'a> {
     Insert {
-        row: Vec<'a, PgValue>,
+        row: Vec<'a, PgValue<'a>>,
     },
     Update {
-        old: Vec<'a, PgValue>,
-        row: Vec<'a, PgValue>,
+        old: Vec<'a, PgValue<'a>>,
+        row: Vec<'a, PgValue<'a>>,
     },
     Delete {
-        old: Vec<'a, PgValue>,
+        old: Vec<'a, PgValue<'a>>,
     },
 }
 
@@ -25,7 +25,7 @@ pub enum FromAvroError {
     #[error("No events where found in the transmission")]
     NoEvents,
 
-    #[error("While reading from Avro: {0}")]
+    #[error("While ng from Avro: {0}")]
     Avro(#[from] serde_avro_fast::de::DeError),
 }
 
@@ -132,44 +132,17 @@ const RELATION_SCHEMA: LazyLock<Schema> = LazyLock::new(|| {
         .expect("Failed to parse Avro schema")
 });
 
-#[derive(Debug, Clone)]
-pub enum PgValue {
-    Text { ptr: *const u8, len: usize },
+#[derive(Debug, Clone, PartialEq)]
+pub enum PgValue<'a> {
+    Text(&'a str),
     Int4(u32),
 }
 
-impl PartialEq for PgValue {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (
-                Self::Text {
-                    ptr: l_ptr,
-                    len: l_len,
-                },
-                Self::Text {
-                    ptr: r_ptr,
-                    len: r_len,
-                },
-            ) => unsafe {
-                let s1 = std::slice::from_raw_parts(*l_ptr, *l_len);
-                let s2 = std::slice::from_raw_parts(*r_ptr, *r_len);
-
-                s1 == s2
-            },
-            (Self::Int4(l0), Self::Int4(r0)) => l0 == r0,
-            _ => false,
-        }
-    }
-}
-
-impl<'a> Serialize for PgValue {
+impl<'a> Serialize for PgValue<'a> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match self {
-            PgValue::Text { ptr, len } => {
+            PgValue::Text(s) => {
                 let mut record = serializer.serialize_struct("Text", 1)?;
-                let s = unsafe {
-                    std::str::from_utf8_unchecked(std::slice::from_raw_parts(*ptr, *len))
-                };
                 record.serialize_field("Text", s)?;
                 record.end()
             }
@@ -182,23 +155,17 @@ impl<'a> Serialize for PgValue {
     }
 }
 
-impl<'a> From<&'static str> for PgValue {
-    fn from(value: &'static str) -> Self {
-        Self::Text {
-            ptr: value.as_ptr(),
-            len: value.len(),
-        }
+impl<'a> From<&'a str> for PgValue<'a> {
+    fn from(value: &'a str) -> Self {
+        Self::Text(value)
     }
 }
 
-impl From<u32> for PgValue {
+impl From<u32> for PgValue<'_> {
     fn from(value: u32) -> Self {
         Self::Int4(value)
     }
 }
-
-// This is needed for Postgres client, but we have remember to keep the data
-unsafe impl Sync for PgValue {}
 
 #[cfg(test)]
 mod tests {
@@ -211,15 +178,10 @@ mod tests {
     fn back_and_forth() {
         let arena = Bump::with_capacity(1024);
 
-        let text = "hello";
-
         let event = ChangeEvent {
             op: Op::Insert {
                 row: vec![in &arena;
-                    PgValue::Text {
-                        ptr: text.as_ptr(),
-                        len: text.len(),
-                    },
+                    PgValue::Text("b"),
                 ],
             },
             rel: 1024,

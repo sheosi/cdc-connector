@@ -14,4 +14,3 @@ thiserror = "2.0.20"
 # Pre alloc vec
 bumpalo = { version = "3.20.3", features = ["collections", "serde","std"] }
 serde_repr = "0.1.21"
-bytes = "1.12.1"

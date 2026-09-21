@@ -3,16 +3,16 @@ use bumpalo::{Bump, collections::Vec};
 use cdc_avro::{FieldAccess, FieldKind, PgValue};
 
 pub fn parse<'a, F: FieldAccess>(
-    data: &[u8],
+    data: &'a [u8],
     arena: &'a Bump,
     fields: &'a [F],
-) -> Result<(Vec<'a, PgValue>, usize), DecoderError> {
+) -> Result<(Vec<'a, PgValue<'a>>, usize), DecoderError> {
     #[inline(always)]
     fn num_cols<'a, const N: usize, F: FieldAccess>(
-        data: &[u8],
+        data: &'a [u8],
         fields: &'a [F],
         arena: &'a Bump,
-    ) -> Result<(Vec<'a, PgValue>, usize), DecoderError> {
+    ) -> Result<(Vec<'a, PgValue<'a>>, usize), DecoderError> {
         let mut last_pos = 2;
         let mut cols = Vec::with_capacity_in(N, arena);
 
@@ -63,13 +63,13 @@ pub fn parse_keys<'a, F: FieldAccess>(
     data: &'a [u8],
     arena: &'a Bump,
     fields: &'a [F],
-) -> Result<(Vec<'a, PgValue>, usize), DecoderError> {
+) -> Result<(Vec<'a, PgValue<'a>>, usize), DecoderError> {
     #[inline(always)]
     fn num_cols<'a, const N: usize, F: FieldAccess>(
         data: &'a [u8],
         fields: &'a [F],
         arena: &'a Bump,
-    ) -> Result<(Vec<'a, PgValue>, usize), DecoderError> {
+    ) -> Result<(Vec<'a, PgValue<'a>>, usize), DecoderError> {
         let mut last_pos = 2;
         let mut cols = Vec::with_capacity_in(N, arena);
 
@@ -103,8 +103,7 @@ pub fn parse_keys<'a, F: FieldAccess>(
             let mut cols = Vec::with_capacity_in(n_cols as usize, arena);
 
             for i in 0..n_cols {
-                let (value, len) =
-                    parse_value(&bytes::Bytes::copy_from_slice(&data), &fields[i as usize])?;
+                let (value, len) = parse_value(&data[last_pos..], &fields[i as usize])?;
 
                 last_pos += len;
 
@@ -119,36 +118,29 @@ pub fn parse_keys<'a, F: FieldAccess>(
 fn parse_value<'a, F: FieldAccess>(
     data: &'a [u8],
     field: &F,
-) -> Result<(PgValue, usize), DecoderError> {
+) -> Result<(PgValue<'a>, usize), DecoderError> {
     match data[0] {
         b'n' => todo!(), //Ok((TupleCol::Null, 1)),
         b'u' => todo!(), //Ok((TupleCol::Toasted, 1)),
         b't' => {
-            let l_end = 5;
             // Here's be because we are using network endianness (always big endian)
             let l = u32::from_be_bytes(
-                data[1..l_end]
+                data[1..5]
                     .try_into()
                     .map_err(|_| DecoderError::TruncatedInput)?,
             ) as usize;
 
-            let final_l = 5 + l;
-            if data.len() < final_l {
+            if data.len() < 5 + l {
                 return Err(DecoderError::TruncatedInput);
             }
 
-            // Just using simdutf8 to check that the data is actually utf8
-            let a = simdutf8::basic::from_utf8(&data[l_end..final_l])?;
-            let text = PgValue::Text {
-                ptr: a.as_ptr(),
-                len: a.len(),
-            };
+            let final_l = 5 + l;
+            let text = PgValue::Text(simdutf8::basic::from_utf8(&data[5..final_l])?);
             Ok((text, final_l))
         }
         b'b' => {
-            let l_end = 5;
             let l = u32::from_be_bytes(
-                data[1..l_end]
+                data[1..5]
                     .try_into()
                     .map_err(|_| DecoderError::TruncatedInput)?,
             ) as usize;
@@ -161,7 +153,7 @@ fn parse_value<'a, F: FieldAccess>(
                         return Err(DecoderError::WrongFieldKind(FieldKind::Int4));
                     }
                     PgValue::Int4(u32::from_be_bytes(
-                        data[l_end..l_end + 4]
+                        data[5..9]
                             .try_into()
                             .map_err(|_| DecoderError::TruncatedInput)?,
                     ))
@@ -191,7 +183,7 @@ mod test {
 
     #[test]
     fn empty_data() {
-        let data = bytes::Bytes::from_static(&[0, 0]);
+        let data = [0, 0];
 
         let arena = Bump::new();
 

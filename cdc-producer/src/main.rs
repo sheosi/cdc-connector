@@ -6,8 +6,6 @@ use bumpalo::Bump;
 use cdc_avro::{ChangeEvent, Relation};
 use cdc_wal_reader::Producer as CdcProducer;
 use futures_util::stream::StreamExt;
-use rdkafka::admin::{AdminClient, AdminOptions, NewTopic, ResourceSpecifier, TopicReplication};
-use rdkafka::client::DefaultClientContext;
 use rdkafka::config::RDKafkaLogLevel;
 use rdkafka::consumer::{Consumer, StreamConsumer};
 use rdkafka::producer::{FutureProducer, FutureRecord, Producer};
@@ -32,12 +30,12 @@ impl KafkaProducer {
             .set("enable.idempotence", "true")
             .create()?;
 
-        producer.init_transactions(Duration::from_secs(3))?;
+        producer.init_transactions(std::time::Duration::from_secs(3))?;
 
         Ok(Self {
             inner: producer,
             topic: config.topic.clone(),
-            lsn_topic: format!("{}.lsn", config.topic),
+            lsn_topic: format!("{}_lsn", config.topic),
             key: config.key.clone(),
             arena: Bump::with_capacity(2048),
         })
@@ -66,22 +64,24 @@ impl CdcProducer for KafkaProducer {
 
         self.inner.begin_transaction().map_err(|e| e.to_string())?;
 
-        if let Err((e, _)) = self.inner.send(future_record, Duration::from_secs(5)).await {
-            let _ = self.inner.abort_transaction(Duration::from_secs(5));
-            return Err(e.to_string());
-        }
-
-        if let Err((e, _)) = self
-            .inner
-            .send(lsn_future_record, Timeout::After(Duration::from_secs(5)))
+        self.inner
+            .send(
+                future_record,
+                Timeout::After(std::time::Duration::from_secs(5)),
+            )
             .await
-        {
-            let _ = self.inner.abort_transaction(Duration::from_secs(5));
-            return Err(e.to_string());
-        };
+            .map_err(|(e, _)| e.to_string())?;
 
         self.inner
-            .commit_transaction(Duration::from_secs(3))
+            .send(
+                lsn_future_record,
+                Timeout::After(std::time::Duration::from_secs(5)),
+            )
+            .await
+            .map_err(|(e, _)| e.to_string())?;
+
+        self.inner
+            .commit_transaction(std::time::Duration::from_secs(3))
             .map_err(|e| e.to_string())?;
 
         Ok(())
@@ -101,71 +101,12 @@ impl CdcProducer for KafkaProducer {
             .payload(&relation_bin);
 
         self.inner
-            .send(future_record, Duration::from_secs(5))
+            .send(future_record, std::time::Duration::from_secs(5))
             .await
             .map_err(|(e, _)| e.to_string())?;
 
         Ok(())
     }
-}
-
-async fn ensure_topic(
-    admin: &AdminClient<DefaultClientContext>,
-    topic: &str,
-    partitions: i32,
-    replication: i32,
-    compact: bool,
-) -> Result<(), String> {
-    let metadata = admin
-        .inner()
-        .fetch_metadata(Some(topic), Duration::from_secs(5))
-        .map_err(|e| e.to_string())?;
-
-    if metadata.topics().is_empty() || metadata.topics()[0].partitions().is_empty() {
-        let mut new_topic = NewTopic::new(topic, partitions, TopicReplication::Fixed(replication));
-        if compact {
-            new_topic = new_topic.set("cleanup.policy", "compact");
-        }
-        admin
-            .create_topics(
-                &[new_topic],
-                &AdminOptions::new().request_timeout(Some(Duration::from_secs(5))),
-            )
-            .await
-            .map_err(|e| e.to_string())?;
-
-        return Ok(());
-    }
-
-    let topic_meta = &metadata.topics()[0];
-    if topic_meta.partitions().len() != partitions as usize {
-        return Err(format!("{} has wrong partition count", topic));
-    }
-
-    let resource = ResourceSpecifier::Topic(topic);
-    let configs = admin
-        .describe_configs(&[resource], &AdminOptions::new())
-        .await
-        .map_err(|e| e.to_string())?;
-
-    for config in configs {
-        if let Ok(config) = config {
-            for entry in config.entries {
-                if entry.name == "cleanup.policy" {
-                    let is_compact = matches!(entry.value.as_deref(), Some("compact"));
-
-                    if !(compact && is_compact || !compact && !is_compact) {
-                        eprintln!(
-                            "Correctly setting compactability of topic '{}' has failed",
-                            topic
-                        );
-                        panic!();
-                    }
-                }
-            }
-        }
-    }
-    Ok(())
 }
 
 #[derive(Deserialize)]
@@ -223,29 +164,6 @@ async fn read_lsn(kafka_config: &KafkaConfig) -> Result<u64, rdkafka::error::Kaf
     }
 }
 
-async fn check_topics(kafka_config: &KafkaConfig) -> Result<(), ()> {
-    let admin: AdminClient<DefaultClientContext> = ClientConfig::new()
-        .set("bootstrap.servers", &kafka_config.brokers)
-        .create()
-        .unwrap();
-
-    ensure_topic(&admin, &format!("{}.lsn", &kafka_config.topic), 1, 1, true)
-        .await
-        .unwrap();
-
-    ensure_topic(
-        &admin,
-        &format!("{}.relations", &kafka_config.topic),
-        1,
-        1,
-        true,
-    )
-    .await
-    .unwrap();
-
-    Ok(())
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
     let own_config: ProducerConfig = config::Config::builder()
@@ -254,10 +172,6 @@ async fn main() -> Result<()> {
         .expect("Failed to find cdc-producer config")
         .try_deserialize()
         .expect("cdc-producer config is malformated");
-
-    check_topics(&own_config.kafka)
-        .await
-        .expect("Failed to check topics");
 
     let lsn = read_lsn(&own_config.kafka)
         .await

@@ -204,9 +204,9 @@ impl KafkaSink for PostgresSink {
 }
 
 #[derive(Debug)]
-struct ToSqlWrapper(PgValue);
+struct ToSqlWrapper<'a>(PgValue<'a>);
 
-impl ToSql for ToSqlWrapper {
+impl<'a> ToSql for ToSqlWrapper<'a> {
     fn to_sql(
         &self,
         ty: &tokio_postgres::types::Type,
@@ -216,12 +216,7 @@ impl ToSql for ToSqlWrapper {
         Self: Sized,
     {
         match &self.0 {
-            PgValue::Text { ptr, len } => {
-                let s = unsafe {
-                    std::str::from_utf8_unchecked(std::slice::from_raw_parts(*ptr, *len))
-                };
-                s.to_sql(ty, out)
-            }
+            PgValue::Text(s) => s.to_sql(ty, out),
             PgValue::Int4(n) => n.to_sql(ty, out),
         }
     }
@@ -239,12 +234,7 @@ impl ToSql for ToSqlWrapper {
         out: &mut tokio_postgres::types::private::BytesMut,
     ) -> Result<IsNull, Box<dyn std::error::Error + Sync + Send>> {
         match &self.0 {
-            PgValue::Text { ptr, len } => {
-                let s = unsafe {
-                    std::str::from_utf8_unchecked(std::slice::from_raw_parts(*ptr, *len))
-                };
-                s.to_sql_checked(ty, out)
-            }
+            PgValue::Text(s) => s.to_sql_checked(ty, out),
             PgValue::Int4(n) => n.to_sql_checked(ty, out),
         }
     }

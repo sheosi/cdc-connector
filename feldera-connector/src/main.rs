@@ -39,8 +39,8 @@ pub struct FelderaConnector {
 
 #[derive(Serialize)]
 enum FelderaEvent<'a> {
-    Insert(bumpalo::collections::Vec<'a, PgValue>),
-    Delete(bumpalo::collections::Vec<'a, PgValue>),
+    Insert(bumpalo::collections::Vec<'a, PgValue<'a>>),
+    Delete(bumpalo::collections::Vec<'a, PgValue<'a>>),
 }
 
 impl<'a> FelderaEvent<'a> {
