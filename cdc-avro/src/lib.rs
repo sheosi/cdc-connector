@@ -127,7 +127,7 @@ pub enum ReplicaKind {
 }
 
 const RELATION_SCHEMA: LazyLock<Schema> = LazyLock::new(|| {
-    CHANGE_EVENT_SCHEMA_STR
+    RELATION_SCHEMA_STR
         .parse()
         .expect("Failed to parse Avro schema")
 });

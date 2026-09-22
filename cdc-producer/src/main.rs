@@ -6,6 +6,8 @@ use bumpalo::Bump;
 use cdc_avro::{ChangeEvent, Relation};
 use cdc_wal_reader::Producer as CdcProducer;
 use futures_util::stream::StreamExt;
+use rdkafka::admin::{AdminClient, AdminOptions, NewTopic, ResourceSpecifier};
+use rdkafka::client::DefaultClientContext;
 use rdkafka::config::RDKafkaLogLevel;
 use rdkafka::consumer::{Consumer, StreamConsumer};
 use rdkafka::producer::{FutureProducer, FutureRecord, Producer};
@@ -172,6 +174,88 @@ async fn read_lsn(kafka_config: &KafkaConfig) -> Result<u64, rdkafka::error::Kaf
     }
 }
 
+async fn ensure_topic(
+    admin: &AdminClient<DefaultClientContext>,
+    topic: &str,
+    partitions: i32,
+    replication: i32,
+    compact: bool,
+) -> Result<(), String> {
+    let metadata = admin
+        .inner()
+        .fetch_metadata(Some(topic), Duration::from_secs(5))
+        .map_err(|e| e.to_string())?;
+
+    if metadata.topics().is_empty() || metadata.topics()[0].partitions().is_empty() {
+        let mut new_topic = NewTopic::new(topic, partitions, TopicReplication::Fixed(replication));
+        if compact {
+            new_topic = new_topic.set("cleanup.policy", "compact");
+        }
+        admin
+            .create_topics(
+                &[new_topic],
+                &AdminOptions::new().request_timeout(Some(Duration::from_secs(5))),
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+
+        return Ok(());
+    }
+
+    let topic_meta = &metadata.topics()[0];
+    if topic_meta.partitions().len() != partitions as usize {
+        return Err(format!("{} has wrong partition count", topic));
+    }
+
+    let resource = ResourceSpecifier::Topic(topic);
+    let configs = admin
+        .describe_configs(&[resource], &AdminOptions::new())
+        .await
+        .map_err(|e| e.to_string())?;
+
+    for config in configs {
+        if let Ok(config) = config {
+            for entry in config.entries {
+                if entry.name == "cleanup.policy" {
+                    let is_compact = matches!(entry.value.as_deref(), Some("compact"));
+
+                    if !(compact && is_compact || !compact && !is_compact) {
+                        eprintln!(
+                            "Correctly setting compactability of topic '{}' has failed",
+                            topic
+                        );
+                        panic!();
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+async fn check_topics(kafka_config: &KafkaConfig) -> Result<(), ()> {
+    let admin: AdminClient<DefaultClientContext> = ClientConfig::new()
+        .set("bootstrap.servers", &kafka_config.brokers)
+        .create()
+        .unwrap();
+
+    ensure_topic(&admin, &format!("{}.lsn", &kafka_config.topic), 1, 1, true)
+        .await
+        .unwrap();
+
+    ensure_topic(
+        &admin,
+        &format!("{}.relations", &kafka_config.topic),
+        1,
+        1,
+        true,
+    )
+    .await
+    .unwrap();
+
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let own_config: ProducerConfig = config::Config::builder()
@@ -180,6 +264,10 @@ async fn main() -> Result<()> {
         .expect("Failed to find cdc-producer config")
         .try_deserialize()
         .expect("cdc-producer config is malformated");
+
+    check_topics(&own_config.kafka)
+        .await
+        .expect("Failed to setup topics");
 
     let lsn = read_lsn(&own_config.kafka)
         .await
