@@ -30,12 +30,12 @@ impl KafkaProducer {
             .set("enable.idempotence", "true")
             .create()?;
 
-        producer.init_transactions(std::time::Duration::from_secs(3))?;
+        producer.init_transactions(Duration::from_secs(3))?;
 
         Ok(Self {
             inner: producer,
             topic: config.topic.clone(),
-            lsn_topic: format!("{}_lsn", config.topic),
+            lsn_topic: format!("{}.lsn", config.topic),
             key: config.key.clone(),
             arena: Bump::with_capacity(2048),
         })
@@ -43,14 +43,18 @@ impl KafkaProducer {
 }
 
 impl CdcProducer for KafkaProducer {
+    async fn start_transaction(&self) -> Result<(), String> {
+        self.inner.begin_transaction().map_err(|e| e.to_string())?;
+
+        Ok(())
+    }
+
     async fn send<'a>(
         &self,
         relation: &Relation<'a>,
         event: ChangeEvent<'a>,
-        lsn: u64,
     ) -> Result<(), String> {
         let payload = event.into_avro().map_err(|e| e.to_string())?;
-        let lsn_payload = lsn.to_be_bytes();
         let topic = format!(
             "{}.events.{}.{}",
             self.topic, relation.namespace, relation.name
@@ -58,31 +62,10 @@ impl CdcProducer for KafkaProducer {
 
         let future_record = FutureRecord::to(&topic).key(&self.key).payload(&payload);
 
-        let lsn_future_record = FutureRecord::to(&self.lsn_topic)
-            .key(&self.key)
-            .payload(&lsn_payload);
-
-        self.inner.begin_transaction().map_err(|e| e.to_string())?;
-
         self.inner
-            .send(
-                future_record,
-                Timeout::After(std::time::Duration::from_secs(5)),
-            )
+            .send(future_record, Timeout::After(Duration::from_secs(5)))
             .await
             .map_err(|(e, _)| e.to_string())?;
-
-        self.inner
-            .send(
-                lsn_future_record,
-                Timeout::After(std::time::Duration::from_secs(5)),
-            )
-            .await
-            .map_err(|(e, _)| e.to_string())?;
-
-        self.inner
-            .commit_transaction(std::time::Duration::from_secs(3))
-            .map_err(|e| e.to_string())?;
 
         Ok(())
     }
@@ -101,11 +84,36 @@ impl CdcProducer for KafkaProducer {
             .payload(&relation_bin);
 
         self.inner
-            .send(future_record, std::time::Duration::from_secs(5))
+            .send(future_record, Duration::from_secs(5))
             .await
             .map_err(|(e, _)| e.to_string())?;
 
         Ok(())
+    }
+
+    async fn commit_transaction(&self, lsn: u64) -> std::prelude::v1::Result<(), String> {
+        let lsn_payload = lsn.to_be_bytes();
+
+        let lsn_future_record = FutureRecord::to(&self.lsn_topic)
+            .key(&self.key)
+            .payload(&lsn_payload);
+
+        self.inner
+            .send(lsn_future_record, Timeout::After(Duration::from_secs(5)))
+            .await
+            .map_err(|(e, _)| e.to_string())?;
+
+        self.inner
+            .commit_transaction(Duration::from_secs(3))
+            .map_err(|e| e.to_string())?;
+
+        Ok(())
+    }
+
+    async fn abort_transaction(&self) -> Result<(), String> {
+        self.inner
+            .abort_transaction(Duration::from_secs(5))
+            .map_err(|e| e.to_string())
     }
 }
 

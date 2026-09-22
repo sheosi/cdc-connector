@@ -15,19 +15,15 @@ use crate::decoder::{DecoderError, relation::RelationData};
 pub mod decoder;
 
 async fn send_to_producer<'a, P>(
-    client: &ReplicationClient,
     event_res: Result<(ChangeEvent<'a>, &'a RelationData<'a>), DecoderError>,
     producer: &P,
-    lsn: u64,
 ) where
     P: Producer,
 {
     match event_res {
         Ok((event, relation)) => {
-            if let Err(e) = producer.send(&relation.inner, event, lsn).await {
+            if let Err(e) = producer.send(&relation.inner, event).await {
                 eprintln!("Producer had an error {}", e);
-            } else {
-                client.update_applied_lsn(Lsn(lsn));
             }
         }
         Err(e) => {
@@ -90,41 +86,27 @@ pub async fn start_wal_input<P: Producer>(
                         relation_map.insert(relation.inner.relation_oid, relation);
                     }
                 }
-                b'B' => {
-                    println!("XLogData wal_end={} bytes={:?}", wal_end, &data);
-                    if let Ok(begin) = decoder::transactions::Begin::parse(data) {}
-                }
-                b'C' => {
-                    println!("XLogData wal_end={} bytes={:?}", wal_end, &data);
-                    if let Ok(begin) = decoder::transactions::Begin::parse(data) {}
-                }
                 b'I' => {
                     println!("XLogData wal_end={} bytes={:?}", wal_end, &data);
                     send_to_producer(
-                        &client,
                         decoder::insert::parse(&data, &relation_map, &arena),
                         &producer,
-                        0,
                     )
                     .await;
                 }
                 b'D' => {
                     println!("Remove bytes={:?}", &data);
                     send_to_producer(
-                        &client,
                         decoder::delete::parse(&data, &relation_map, &arena),
                         &producer,
-                        0,
                     )
                     .await;
                 }
                 b'U' => {
                     println!("Delete bytes={:?}", &data);
                     send_to_producer(
-                        &client,
                         decoder::update::parse(&data, &relation_map, &arena),
                         &producer,
-                        0,
                     )
                     .await;
                 }
@@ -132,6 +114,26 @@ pub async fn start_wal_input<P: Producer>(
                     println!("XLogData wal_end={} bytes={:?}", wal_end, data);
                 }
             },
+            ReplicationEvent::Begin {
+                final_lsn,
+                xid,
+                commit_time_micros,
+            } => {
+                if let Err(e) = producer.start_transaction().await {
+                    eprintln!("Failed to start transaction: {:?}", e);
+                }
+            }
+            ReplicationEvent::Commit {
+                lsn,
+                end_lsn,
+                commit_time_micros,
+            } => {
+                if let Err(e) = producer.commit_transaction(end_lsn.0).await {
+                    eprintln!("Failed to commit transaction: {:?}", e);
+                } else {
+                    client.update_applied_lsn(lsn);
+                }
+            }
             ReplicationEvent::KeepAlive { .. } => {
                 // heartbeat; crate handles reply
             }
@@ -203,15 +205,20 @@ async fn configure_replica_identity(
 }
 
 pub trait Producer: Send {
+    fn start_transaction(&self) -> impl std::future::Future<Output = Result<(), String>>;
     fn send<'a>(
         &self,
         relation: &Relation<'a>,
         event: ChangeEvent<'a>,
-        lsn: u64,
     ) -> impl std::future::Future<Output = Result<(), String>>;
 
     fn on_relation<'a>(
         &mut self,
         relation: &Relation<'a>,
     ) -> impl std::future::Future<Output = Result<(), String>>;
+
+    fn commit_transaction(&self, lsn: u64)
+    -> impl std::future::Future<Output = Result<(), String>>;
+
+    fn abort_transaction(&self) -> impl std::future::Future<Output = Result<(), String>>;
 }
