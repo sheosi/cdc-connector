@@ -14,17 +14,20 @@ impl InsertStatementCache {
         &mut self,
         client: &Client,
         rel: u32,
-        rows: &[&str],
+        rows_table: &HashMap<u32, Vec<String>>,
         table_names: &TableNames,
     ) -> Result<InsertStatement, tokio_postgres::Error> {
         use std::collections::hash_map::Entry;
 
         match self.0.entry(rel) {
             Entry::Occupied(e) => Ok(e.get().clone()),
-            Entry::Vacant(e) => Ok(e
-                // TODO: Get relname to db here
-                .insert(InsertStatement::new(client, table_names.get(rel).unwrap(), rows).await?)
-                .clone()),
+            Entry::Vacant(e) => {
+                let rows: Vec<&str> = rows_table[&rel].iter().map(|s| s.as_str()).collect();
+                Ok(e.insert(
+                    InsertStatement::new(client, table_names.get(rel).unwrap(), &rows).await?,
+                )
+                .clone())
+            }
         }
     }
 }

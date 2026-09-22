@@ -1,4 +1,4 @@
-use bumpalo::Bump;
+use bumpalo::{Bump, collections::CollectIn};
 use cdc_avro::{ChangeEvent, Field, PgValue, Relation, ReplicaKind};
 use cdc_sink::{KafkaConfig, KafkaSink, TableNames};
 use config::Config;
@@ -76,6 +76,7 @@ pub struct PostgresSink {
     insert_stmt_cache: InsertStatementCache,
     delete_stmt_cache: DeleteStatementCache,
     relation_cache: RelationCache,
+    arena: Bump,
 }
 
 impl PostgresSink {
@@ -92,37 +93,40 @@ impl PostgresSink {
             insert_stmt_cache: InsertStatementCache::new(),
             delete_stmt_cache: DeleteStatementCache::new(),
             relation_cache: RelationCache::from_rels(&relations),
+            arena: Bump::with_capacity(2048),
         })
     }
 
-    async fn perform_op<'a>(&mut self, event: ChangeEvent<'a>) -> Result<(), BridgeError> {
+    async fn perform_op<'a>(&'a mut self, event: ChangeEvent<'a>) -> Result<(), BridgeError> {
         match event.op {
-            cdc_avro::Op::Insert { mut row } => {
+            cdc_avro::Op::Insert { row } => {
                 let insert_stmt = self
                     .insert_stmt_cache
                     .get(
                         &self.client,
                         event.rel,
-                        &["id", "name", "email"],
+                        &self.relation_cache.fields,
                         &self.relation_cache.table_names,
                     )
                     .await
                     .expect("Failed to generate insert statement");
-
-                let email = row.pop().unwrap();
-                let name = row.pop().unwrap();
-                let id = row.pop().unwrap();
-
-                if let Err(e) = self
-                    .client
-                    .execute(
-                        &insert_stmt.stmt,
-                        &[&ToSqlWrapper(id), &ToSqlWrapper(name), &ToSqlWrapper(email)],
-                    )
-                    .await
                 {
-                    eprintln!("{:?}", e);
+                    let keys: bumpalo::collections::Vec<'_, ToSqlWrapper> = row
+                        .into_iter()
+                        .map(|v| ToSqlWrapper(v))
+                        .collect_in(&self.arena);
+
+                    let keys_ref: bumpalo::collections::Vec<'_, &(dyn ToSql + Sync)> = keys
+                        .iter()
+                        .map(|k| k as &(dyn ToSql + Sync))
+                        .collect_in(&self.arena);
+
+                    if let Err(e) = self.client.execute(&insert_stmt.stmt, &keys_ref).await {
+                        eprintln!("{:?}", e);
+                    }
                 }
+
+                self.arena.reset();
             }
             cdc_avro::Op::Update { old, mut row } => {
                 // TODO: how to process updates, should we upsert or not?
@@ -154,34 +158,40 @@ impl PostgresSink {
 
                 let key_identity = self.relation_cache.identities.get(&event.rel);
 
-                let keys: Vec<ToSqlWrapper> = match key_identity {
-                    Some(RelationIdentity::Full) => {
-                        old.into_iter().map(|v| ToSqlWrapper(v)).collect()
-                    }
-                    Some(RelationIdentity::Keys(ids)) => old
-                        .into_iter()
-                        .enumerate()
-                        .filter_map(|(i, v)| {
-                            if ids.contains(&i) {
-                                Some(ToSqlWrapper(v))
-                            } else {
-                                None
-                            }
-                        })
-                        .collect(),
-                    None => return Err(BridgeError::UnknowRelation),
-                };
-
-                let keys_ref: Vec<&(dyn ToSql + Sync)> =
-                    keys.iter().map(|k| k as &(dyn ToSql + Sync)).collect();
-
-                if let Err(e) = self
-                    .client
-                    .execute(&delete_stmt.stmt, keys_ref.as_slice())
-                    .await
                 {
-                    eprintln!("{:?}", e);
+                    let keys: Vec<ToSqlWrapper> = match key_identity {
+                        Some(RelationIdentity::Full) => {
+                            old.into_iter().map(|v| ToSqlWrapper(v)).collect()
+                        }
+                        Some(RelationIdentity::Keys(ids)) => old
+                            .into_iter()
+                            .enumerate()
+                            .filter_map(|(i, v)| {
+                                if ids.contains(&i) {
+                                    Some(ToSqlWrapper(v))
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect(),
+                        None => return Err(BridgeError::UnknowRelation),
+                    };
+
+                    let keys_ref: bumpalo::collections::Vec<'_, &(dyn ToSql + Sync)> = keys
+                        .iter()
+                        .map(|k| k as &(dyn ToSql + Sync))
+                        .collect_in(&self.arena);
+
+                    if let Err(e) = self
+                        .client
+                        .execute(&delete_stmt.stmt, keys_ref.as_slice())
+                        .await
+                    {
+                        eprintln!("{:?}", e);
+                    }
                 }
+
+                self.arena.reset()
             }
         }
 
@@ -243,6 +253,7 @@ impl<'a> ToSql for ToSqlWrapper<'a> {
 pub struct RelationCache {
     identities: HashMap<u32, RelationIdentity>,
     table_names: TableNames,
+    fields: HashMap<u32, Vec<String>>,
 }
 
 impl RelationCache {
@@ -250,6 +261,7 @@ impl RelationCache {
         Self {
             identities: HashMap::new(),
             table_names: TableNames::new(),
+            fields: HashMap::new(),
         }
     }
 
@@ -259,9 +271,15 @@ impl RelationCache {
             .map(|(i, v)| (*i, extract_key_identity(&v)))
             .collect();
 
+        let fields = rels
+            .iter()
+            .map(|(i, v)| (*i, v.fields.iter().map(|f| f.name.clone()).collect()))
+            .collect();
+
         Self {
             identities,
             table_names: TableNames::from_rels(&rels),
+            fields,
         }
     }
 
