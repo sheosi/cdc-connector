@@ -1,6 +1,6 @@
 use bumpalo::collections::Vec;
 use serde::Serialize;
-use serde::{Serializer, ser::SerializeStruct};
+use serde::{ser::SerializeStruct, Serializer};
 use serde_avro_fast::Schema;
 use serde_repr::Serialize_repr;
 use std::sync::LazyLock;
@@ -112,7 +112,7 @@ impl<'a> Relation<'a> {
     }
 
     pub fn to_avro(&self) -> Result<std::vec::Vec<u8>, serde_avro_fast::ser::SerError> {
-        let schema = &CHANGE_EVENT_SCHEMA;
+        let schema = &RELATION_SCHEMA;
 
         let mut config = serde_avro_fast::ser::SerializerConfig::new(schema);
         serde_avro_fast::to_datum(&self, std::vec::Vec::with_capacity(256), &mut config)
@@ -172,7 +172,7 @@ mod tests {
 
     use super::*;
 
-    use bumpalo::{Bump, vec};
+    use bumpalo::{vec, Bump};
 
     #[test]
     fn back_and_forth() {
