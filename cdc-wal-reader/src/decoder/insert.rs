@@ -1,5 +1,5 @@
 use ahash::RandomState;
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Instant};
 
 use bumpalo::Bump;
 use cdc_avro::ChangeEvent;
@@ -11,6 +11,8 @@ pub fn parse<'a>(
     relation_map: &'a HashMap<u32, RelationData, RandomState>,
     arena: &'a Bump,
 ) -> Result<(ChangeEvent<'a>, &'a RelationData<'a>), DecoderError> {
+    let start = Instant::now();
+
     let relation_oid = u32::from_be_bytes(
         data[1..5]
             .try_into()
@@ -27,6 +29,8 @@ pub fn parse<'a>(
         op: cdc_avro::Op::Insert { row },
         rel: relation.inner.relation_oid,
     };
+
+    metrics::gauge!("cdc_tuple_parse_duration_seconds", "op"=>"insert").increment(1);
 
     Ok((event, relation))
 }

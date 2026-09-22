@@ -126,6 +126,8 @@ impl KafkaSink for FelderaConnector {
 
 #[tokio::main]
 async fn main() {
+    cdc_sink::init_metrics();
+
     let config: BridgeConfig = Config::builder()
         .add_source(config::File::with_name("feldera-connector"))
         .build()

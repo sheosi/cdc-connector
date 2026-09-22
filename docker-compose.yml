@@ -54,3 +54,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  grafana:
+    image: grafana/grafana
+    ports:
+      - "3000:3000"

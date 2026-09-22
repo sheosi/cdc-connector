@@ -23,8 +23,19 @@ async fn send_to_producer<'a, P>(
 {
     match event_res {
         Ok((event, relation)) => {
+            let kind = match &event.op {
+                cdc_avro::Op::Insert { row: _ } => "insert",
+                cdc_avro::Op::Update { old: _, row: _ } => "update",
+                cdc_avro::Op::Delete { old: _ } => "delete",
+            };
+
+            metrics::counter!("cdc_events_produced_total", "op"=> kind, "table" =>relation.inner.name.clone())
+                .increment(1);
+
             if let Err(e) = producer.send(&relation.inner, event).await {
                 eprintln!("Producer had an error {}, aborting transaction", e);
+
+                metrics::counter!("cdc_produce_errors_total", "stage" => "send").increment(1);
 
                 if let Err(e) = producer.abort_transaction().await {
                     eprintln!("Failed to abort transaction {:?}", e);
@@ -167,8 +178,13 @@ pub async fn start_wal_input<P: Producer>(
                     currently_in_transaction = false;
                     if let Err(e) = producer.commit_transaction(end_lsn.0).await {
                         eprintln!("Failed to commit transaction: {:?}", e);
+
+                        metrics::counter!("cdc_produce_errors_total", "stage" => "commit")
+                            .increment(1);
                     } else {
                         client.update_applied_lsn(lsn);
+
+                        metrics::gauge!("cdc_lsn_committed").set(lsn.0 as f64);
                     }
                 }
             }

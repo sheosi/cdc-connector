@@ -17,6 +17,8 @@ mod statements;
 
 #[tokio::main]
 async fn main() {
+    cdc_sink::init_metrics();
+
     let arena = Bump::with_capacity(2048);
 
     let config: BridgeConfig = Config::builder()

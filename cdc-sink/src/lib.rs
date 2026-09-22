@@ -1,8 +1,12 @@
-use std::{collections::HashMap, time::Duration};
+use std::{
+    collections::HashMap,
+    time::{Duration, Instant},
+};
 
 use ahash::RandomState;
 use bumpalo::Bump;
 use cdc_avro::{ChangeEvent, Relation};
+use chrono::Utc;
 use futures_util::StreamExt;
 use rdkafka::{
     ClientConfig, Message,
@@ -103,6 +107,12 @@ impl KafkaClient {
         while let Some(result) = stream.next().await {
             match result {
                 Ok(borrowed_message) => {
+                    if let Some(ts) = borrowed_message.timestamp().to_millis() {
+                        let lag_secs = (Utc::now().timestamp_millis() - ts) as f64 / 1000.0;
+                        metrics::gauge!("cdc_kafka_lag_seconds", "topic" => topic.clone(), "partition" => borrowed_message.partition().to_string())
+                             .set(lag_secs.max(0.0));
+                    }
+
                     if let Some(view) = borrowed_message.payload_view::<[u8]>() {
                         let Some(topic) = borrowed_message.topic().strip_prefix(&self.topic) else {
                             eprintln!(
@@ -115,6 +125,11 @@ impl KafkaClient {
                         if topic.starts_with(".event") {
                             match ChangeEvent::from_avro(view.expect("")) {
                                 Ok(event) => {
+                                    let start = Instant::now();
+
+                                    let event_rel = event.rel.to_string();
+                                    let op_str = event.op.op_str();
+
                                     // This is written a little bit awkward but
                                     if let Err(e) = sink.on_event(event).await {
                                         eprintln!("{:?}", e);
@@ -124,6 +139,12 @@ impl KafkaClient {
                                     ) {
                                         eprintln!("{:?}", e);
                                     }
+
+                                    metrics::histogram!("cdc_event_process_duration_seconds", "op"=> op_str)
+                                        .record(start.elapsed().as_secs_f64());
+
+                                    metrics::counter!("cdc_events_consumed_total", "op" => op_str, "rel" => event_rel)
+                                        .increment(1);
                                 }
                                 Err(e) => {
                                     eprintln!("Failed to parse event's avro: {}", e)
@@ -147,6 +168,25 @@ impl KafkaClient {
             }
         }
     }
+}
+
+pub fn init_metrics() {
+    let builder = metrics_exporter_prometheus::PrometheusBuilder::new();
+    builder
+        .install_recorder()
+        .expect("Failed to install recorder");
+    metrics::describe_counter!(
+        "cdc_events_consumed_total",
+        "The total ammount of events consumed by this instance"
+    );
+    metrics::describe_histogram!(
+        "cdc_event_process_duration_seconds",
+        "The duration of the processing"
+    );
+    metrics::describe_gauge!(
+        "cdc_kafka_lag_seconds",
+        "The lag introduced by Kafka, in seconds"
+    );
 }
 
 pub struct TableNames(HashMap<u32, String, RandomState>);

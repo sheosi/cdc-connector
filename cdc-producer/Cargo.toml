@@ -15,3 +15,6 @@ config = "0.15.25"
 serde = { version = "1.0.229", features = ["derive"] }
 bumpalo = { version = "3.20.3", features = ["collections"] }
 futures-util = "0.3.34"
+metric = "0.1.2"
+metrics = "0.24.6"
+metrics-exporter-prometheus = "0.18.3"

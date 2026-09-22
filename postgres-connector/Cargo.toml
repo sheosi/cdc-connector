@@ -14,3 +14,5 @@ config = "0.15.25"
 serde = { version = "1.0.229", features = ["derive"] }
 thiserror = "2.0.20"
 bumpalo = "3.20.3"
+metrics-exporter-prometheus = "0.18.3"
+metrics = "0.24.6"

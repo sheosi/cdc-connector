@@ -13,3 +13,6 @@ futures-util = "0.3.34"
 serde = { version = "1.0.229", features = ["derive"] }
 ahash = "0.8.12"
 bumpalo = "3.20.3"
+metrics = "0.24.6"
+chrono = "0.4.45"
+metrics-exporter-prometheus = "0.18.3"

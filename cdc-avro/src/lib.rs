@@ -1,6 +1,6 @@
 use bumpalo::collections::Vec;
 use serde::Serialize;
-use serde::{ser::SerializeStruct, Serializer};
+use serde::{Serializer, ser::SerializeStruct};
 use serde_avro_fast::Schema;
 use serde_repr::Serialize_repr;
 use std::sync::LazyLock;
@@ -18,6 +18,16 @@ pub enum Op<'a> {
     Delete {
         old: Vec<'a, PgValue<'a>>,
     },
+}
+
+impl<'a> Op<'a> {
+    pub fn op_str(&self) -> &'static str {
+        match self {
+            Op::Insert { row: _ } => "insert",
+            Op::Update { old: _, row: _ } => "update",
+            Op::Delete { old: _ } => "delete",
+        }
+    }
 }
 
 #[derive(Debug, Error)]
@@ -172,7 +182,7 @@ mod tests {
 
     use super::*;
 
-    use bumpalo::{vec, Bump};
+    use bumpalo::{Bump, vec};
 
     #[test]
     fn back_and_forth() {

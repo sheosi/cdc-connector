@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Instant};
 
 use ahash::RandomState;
 use bumpalo::Bump;
@@ -16,6 +16,8 @@ pub fn parse<'a>(
     relation_map: &'a HashMap<u32, RelationData, RandomState>,
     arena: &'a Bump,
 ) -> Result<(ChangeEvent<'a>, &'a RelationData<'a>), DecoderError> {
+    let start = Instant::now();
+
     /*let id = u32::from_be_bytes(
         data[0..4]
             .try_into()
@@ -37,6 +39,8 @@ pub fn parse<'a>(
         op: cdc_avro::Op::Delete { old },
         rel: relation_oid,
     };
+
+    metrics::gauge!("cdc_tuple_parse_duration_seconds", "op"=>"delete").increment(1);
 
     Ok((event, relation))
 }

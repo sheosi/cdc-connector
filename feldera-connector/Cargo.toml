@@ -18,3 +18,5 @@ config = "0.15.25"
 
 # Pre alloc vec
 bumpalo = { version = "3.20.3", features = ["collections", "serde"] }
+metrics-exporter-prometheus = "0.18.3"
+metrics = "0.24.6"

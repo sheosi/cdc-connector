@@ -258,6 +258,33 @@ async fn check_topics(kafka_config: &KafkaConfig) -> Result<(), ()> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let builder = metrics_exporter_prometheus::PrometheusBuilder::new();
+    builder
+        .install_recorder()
+        .expect("Failed to install recorder");
+
+    metrics::describe_counter!(
+        "cdc_events_produced_total",
+        "The total events produced by cdc-producer"
+    );
+    metrics::describe_counter!(
+        "cdc_produce_errors_total",
+        "The ammount of errors the producer got while producing"
+    );
+    metrics::describe_gauge!("cdc_lsn_committed", "The latest lsn commited");
+    metrics::describe_counter!(
+        "cdc_bytes_produced_total",
+        "The total bytes produced by the cdc-producer"
+    );
+    metrics::describe_histogram!(
+        "cdc_tuple_parse_duration_seconds",
+        "The duration in seconds that we take to parse a certain operation"
+    );
+    metrics::describe_gauge!(
+        "cdc_kafka_lag_seconds",
+        "The lag introduced by Kafka, in seconds"
+    );
+
     let own_config: ProducerConfig = config::Config::builder()
         .add_source(config::File::with_name("cdc-producer"))
         .build()
