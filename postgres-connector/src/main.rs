@@ -11,7 +11,7 @@ use tokio_postgres::{
     types::{IsNull, ToSql},
 };
 
-use crate::statements::{DeleteStatementCache, InsertStatementCache};
+use crate::statements::{DeleteStatementCache, InsertStatementCache, UpsertStatementCache};
 
 mod statements;
 
@@ -71,9 +71,9 @@ impl PostgresConfig {
 
 pub struct PostgresSink {
     client: tokio_postgres::Client,
-    conn: Connection<Socket, NoTlsStream>,
-    pk_cache: HashMap<String, Vec<String>>,
+    _conn: Connection<Socket, NoTlsStream>,
     insert_stmt_cache: InsertStatementCache,
+    upsert_stmt_cache: UpsertStatementCache,
     delete_stmt_cache: DeleteStatementCache,
     relation_cache: RelationCache,
     arena: Bump,
@@ -84,13 +84,13 @@ impl PostgresSink {
         config: PostgresConfig,
         relations: HashMap<u32, Relation<'_>>,
     ) -> Result<Self, tokio_postgres::Error> {
-        let (clt, conn) = tokio_postgres::connect(&config.to_postgres_string(), NoTls).await?;
+        let (clt, _conn) = tokio_postgres::connect(&config.to_postgres_string(), NoTls).await?;
 
         Ok(Self {
             client: clt,
-            conn,
-            pk_cache: HashMap::new(),
+            _conn,
             insert_stmt_cache: InsertStatementCache::new(),
+            upsert_stmt_cache: UpsertStatementCache::new(),
             delete_stmt_cache: DeleteStatementCache::new(),
             relation_cache: RelationCache::from_rels(&relations),
             arena: Bump::with_capacity(2048),
@@ -116,33 +116,29 @@ impl PostgresSink {
                         .map(|v| ToSqlWrapper(v))
                         .collect_in(&self.arena);
 
-                    let keys_ref: bumpalo::collections::Vec<'_, &(dyn ToSql + Sync)> = keys
-                        .iter()
-                        .map(|k| k as &(dyn ToSql + Sync))
-                        .collect_in(&self.arena);
-
-                    if let Err(e) = self.client.execute(&insert_stmt.stmt, &keys_ref).await {
+                    if let Err(e) = self
+                        .client
+                        .execute(&insert_stmt.stmt, &extract_keys_ref(&self.arena, &keys))
+                        .await
+                    {
                         eprintln!("{:?}", e);
                     }
                 }
 
                 self.arena.reset();
             }
-            cdc_avro::Op::Update { old, mut row } => {
-                // TODO: how to process updates, should we upsert or not?
+            cdc_avro::Op::Update { old, row } => {
                 let update_stmt = self
-                    .client
-                    .prepare("INSERT INTO users (id,name,email) VALUES ($1, $2,$3)")
+                    .upsert_stmt_cache
+                    .get(&self.client, event.rel, &self.arena, &self.relation_cache)
                     .await
                     .unwrap();
 
-                let email = ToSqlWrapper(row.pop().unwrap());
-                let name = ToSqlWrapper(row.pop().unwrap());
-                let id = ToSqlWrapper(row.pop().unwrap());
+                let keys = extract_keys(&self.arena, row);
 
                 if let Err(e) = self
                     .client
-                    .execute(&update_stmt, &[&id, &name, &email])
+                    .execute(&update_stmt.stmt, &extract_keys_ref(&self.arena, &keys))
                     .await
                 {
                     eprintln!("{:?}", e);
@@ -177,14 +173,12 @@ impl PostgresSink {
                         None => return Err(BridgeError::UnknowRelation),
                     };
 
-                    let keys_ref: bumpalo::collections::Vec<'_, &(dyn ToSql + Sync)> = keys
-                        .iter()
-                        .map(|k| k as &(dyn ToSql + Sync))
-                        .collect_in(&self.arena);
-
                     if let Err(e) = self
                         .client
-                        .execute(&delete_stmt.stmt, keys_ref.as_slice())
+                        .execute(
+                            &delete_stmt.stmt,
+                            &extract_keys_ref(&self.arena, &keys).as_slice(),
+                        )
                         .await
                     {
                         eprintln!("{:?}", e);
@@ -254,6 +248,7 @@ pub struct RelationCache {
     identities: HashMap<u32, RelationIdentity>,
     table_names: TableNames,
     fields: HashMap<u32, Vec<String>>,
+    keys: HashMap<u32, Vec<String>>,
 }
 
 impl RelationCache {
@@ -262,6 +257,7 @@ impl RelationCache {
             identities: HashMap::new(),
             table_names: TableNames::new(),
             fields: HashMap::new(),
+            keys: HashMap::new(),
         }
     }
 
@@ -276,10 +272,24 @@ impl RelationCache {
             .map(|(i, v)| (*i, v.fields.iter().map(|f| f.name.clone()).collect()))
             .collect();
 
+        let keys = rels
+            .iter()
+            .map(|(i, v)| {
+                (
+                    *i,
+                    v.fields
+                        .iter()
+                        .filter_map(|f| if f.is_key { Some(f.name.clone()) } else { None })
+                        .collect(),
+                )
+            })
+            .collect();
+
         Self {
             identities,
             table_names: TableNames::from_rels(&rels),
             fields,
+            keys,
         }
     }
 
@@ -309,6 +319,22 @@ fn extract_key_identity(rel: &Relation<'_>) -> RelationIdentity {
         ReplicaKind::Keys => RelationIdentity::Keys(extract_keys_pos(&rel.fields)),
         ReplicaKind::Row => RelationIdentity::Full,
     }
+}
+
+fn extract_keys<'a>(
+    arena: &'a Bump,
+    row: bumpalo::collections::Vec<'a, PgValue<'a>>,
+) -> bumpalo::collections::Vec<'a, ToSqlWrapper<'a>> {
+    row.into_iter().map(|v| ToSqlWrapper(v)).collect_in(arena)
+}
+
+fn extract_keys_ref<'a>(
+    arena: &'a Bump,
+    keys: &'a [ToSqlWrapper],
+) -> bumpalo::collections::Vec<'a, &'a (dyn ToSql + Sync)> {
+    keys.iter()
+        .map(|k| k as &(dyn ToSql + Sync))
+        .collect_in(arena)
 }
 
 pub enum RelationIdentity {

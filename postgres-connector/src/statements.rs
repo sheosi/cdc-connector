@@ -1,7 +1,10 @@
+use bumpalo::{Bump, collections::CollectIn};
 use cdc_sink::TableNames;
 use std::collections::HashMap;
 use std::fmt::Write;
 use tokio_postgres::{Client, Statement};
+
+use crate::RelationCache;
 
 pub struct InsertStatementCache(HashMap<u32, InsertStatement>);
 
@@ -96,6 +99,96 @@ impl InsertStatement {
         }
 
         stmt_str.push(')');
+
+        stmt_str
+    }
+}
+
+pub struct UpsertStatementCache(HashMap<u32, UpsertStatement>);
+
+impl UpsertStatementCache {
+    pub fn new() -> Self {
+        Self(HashMap::new())
+    }
+
+    pub async fn get(
+        &mut self,
+        client: &Client,
+        rel: u32,
+        arena: &Bump,
+        relation_cache: &RelationCache,
+    ) -> Result<UpsertStatement, tokio_postgres::Error> {
+        use bumpalo::collections::Vec;
+        use std::collections::hash_map::Entry;
+
+        match self.0.entry(rel) {
+            Entry::Occupied(e) => Ok(e.get().clone()),
+            Entry::Vacant(e) => {
+                let rows: Vec<'_, &str> = relation_cache.fields[&rel]
+                    .iter()
+                    .map(|s| s.as_str())
+                    .collect_in(arena);
+
+                let keys: Vec<'_, &str> = relation_cache.keys[&rel]
+                    .iter()
+                    .map(|s| s.as_str())
+                    .collect_in(arena);
+
+                Ok(e.insert(
+                    UpsertStatement::new(
+                        client,
+                        relation_cache.table_names.get(rel).unwrap(),
+                        &rows,
+                        &keys,
+                    )
+                    .await?,
+                )
+                .clone())
+            }
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct UpsertStatement {
+    pub stmt: Statement,
+}
+
+impl UpsertStatement {
+    pub async fn new(
+        client: &tokio_postgres::Client,
+        table: &str,
+        rows: &[&str],
+        keys: &[&str],
+    ) -> Result<Self, tokio_postgres::Error> {
+        let stmt = client.prepare(&Self::gen_str(table, rows, keys)).await?;
+
+        Ok(UpsertStatement { stmt })
+    }
+
+    fn gen_str(table: &str, rows: &[&str], keys: &[&str]) -> String {
+        let mut stmt_str = InsertStatement::gen_str(table, rows);
+        stmt_str.push_str("ON CONFLICT (");
+
+        for (i, r) in keys.iter().enumerate() {
+            stmt_str.push_str(r); // TODO SET PK
+
+            if i < keys.len() - 1 {
+                stmt_str.push_str(", ");
+            }
+        }
+
+        stmt_str.push_str(") DO UPDATE SET ");
+
+        for (i, c) in rows.iter().enumerate() {
+            stmt_str.push_str(c);
+            stmt_str.push_str(" = EXCLUDED.");
+            stmt_str.push_str(c);
+
+            if i < rows.len() - 1 {
+                stmt_str.push_str(",");
+            }
+        }
 
         stmt_str
     }
