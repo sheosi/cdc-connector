@@ -92,7 +92,7 @@ impl KafkaClient {
     }
 
     pub async fn consume_from_kafka<S: KafkaSink>(&self, mut sink: S) {
-        let topic = format!("{}.event", self.topic.as_str());
+        let topic = format!("{}.event.*", self.topic.as_str());
         self.consumer
             .subscribe(&vec![topic.as_str()])
             .expect("Can't subscribe to specified topics");
