@@ -17,13 +17,20 @@ pub mod decoder;
 async fn send_to_producer<'a, P>(
     event_res: Result<(ChangeEvent<'a>, &'a RelationData<'a>), DecoderError>,
     producer: &P,
+    currently_in_transaction: &mut bool,
 ) where
     P: Producer,
 {
     match event_res {
         Ok((event, relation)) => {
             if let Err(e) = producer.send(&relation.inner, event).await {
-                eprintln!("Producer had an error {}", e);
+                eprintln!("Producer had an error {}, aborting transaction", e);
+
+                if let Err(e) = producer.abort_transaction().await {
+                    eprintln!("Failed to abort transaction {:?}", e);
+                }
+
+                *currently_in_transaction = false;
             }
         }
         Err(e) => {
@@ -71,6 +78,7 @@ pub async fn start_wal_input<P: Producer>(
 
     let arena = Bump::with_capacity(1024);
     let mut relation_map = HashMap::<u32, RelationData, RandomState>::default();
+    let mut currently_in_transaction = false;
 
     while let Some(ev) = client.recv().await? {
         match ev {
@@ -88,37 +96,63 @@ pub async fn start_wal_input<P: Producer>(
                 }
                 b'I' => {
                     println!("XLogData wal_end={} bytes={:?}", wal_end, &data);
-                    send_to_producer(
-                        decoder::insert::parse(&data, &relation_map, &arena),
-                        &producer,
-                    )
-                    .await;
+
+                    // If not in a transaction because it was aborted, skip treating this
+                    if currently_in_transaction {
+                        send_to_producer(
+                            decoder::insert::parse(&data, &relation_map, &arena),
+                            &producer,
+                            &mut currently_in_transaction,
+                        )
+                        .await;
+                    }
                 }
                 b'D' => {
                     println!("Remove bytes={:?}", &data);
-                    send_to_producer(
-                        decoder::delete::parse(&data, &relation_map, &arena),
-                        &producer,
-                    )
-                    .await;
+
+                    // If not in a transaction because it was aborted, skip treating this
+                    if currently_in_transaction {
+                        send_to_producer(
+                            decoder::delete::parse(&data, &relation_map, &arena),
+                            &producer,
+                            &mut currently_in_transaction,
+                        )
+                        .await;
+                    }
                 }
                 b'U' => {
                     println!("Delete bytes={:?}", &data);
-                    send_to_producer(
-                        decoder::update::parse(&data, &relation_map, &arena),
-                        &producer,
-                    )
-                    .await;
+
+                    // If not in a transaction because it was aborted, skip treating this
+                    if currently_in_transaction {
+                        send_to_producer(
+                            decoder::update::parse(&data, &relation_map, &arena),
+                            &producer,
+                            &mut currently_in_transaction,
+                        )
+                        .await;
+                    }
                 }
                 _ => {
                     println!("XLogData wal_end={} bytes={:?}", wal_end, data);
                 }
             },
             ReplicationEvent::Begin {
-                final_lsn,
-                xid,
-                commit_time_micros,
+                final_lsn: _,
+                xid: _,
+                commit_time_micros: _,
             } => {
+                if currently_in_transaction {
+                    eprintln!(
+                        "Already in a transaction but asked for a new one, let's abort the old one"
+                    );
+                    if let Err(e) = producer.abort_transaction().await {
+                        eprintln!("Failed to abort transaction: {:?}", e);
+                    }
+                } else {
+                    currently_in_transaction = true;
+                }
+
                 if let Err(e) = producer.start_transaction().await {
                     eprintln!("Failed to start transaction: {:?}", e);
                 }
@@ -126,12 +160,16 @@ pub async fn start_wal_input<P: Producer>(
             ReplicationEvent::Commit {
                 lsn,
                 end_lsn,
-                commit_time_micros,
+                commit_time_micros: _,
             } => {
-                if let Err(e) = producer.commit_transaction(end_lsn.0).await {
-                    eprintln!("Failed to commit transaction: {:?}", e);
-                } else {
-                    client.update_applied_lsn(lsn);
+                // Don't commit if we already aborted
+                if currently_in_transaction {
+                    currently_in_transaction = false;
+                    if let Err(e) = producer.commit_transaction(end_lsn.0).await {
+                        eprintln!("Failed to commit transaction: {:?}", e);
+                    } else {
+                        client.update_applied_lsn(lsn);
+                    }
                 }
             }
             ReplicationEvent::KeepAlive { .. } => {
@@ -149,6 +187,13 @@ pub async fn start_wal_input<P: Producer>(
                 );
             }
             ev => println!("other: {:?}", ev),
+        }
+    }
+
+    // The connection was closed
+    if currently_in_transaction {
+        if let Err(e) = producer.abort_transaction().await {
+            eprintln!("Failed to abort final transaction {:?}", e);
         }
     }
 
