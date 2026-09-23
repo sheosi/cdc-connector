@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    net::{Ipv4Addr, SocketAddrV4},
     time::{Duration, Instant},
 };
 
@@ -14,6 +15,7 @@ use rdkafka::{
     consumer::{Consumer, StreamConsumer},
 };
 use serde::Deserialize;
+use std::net::SocketAddr;
 
 #[derive(Deserialize, Default)]
 pub struct KafkaConfig {
@@ -49,6 +51,24 @@ impl KafkaConfig {
         KafkaClient {
             consumer,
             topic: self.topic,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+pub struct MetricsConfig {
+    #[serde(default = "default_metrics_config")]
+    port: u16,
+}
+
+fn default_metrics_config() -> u16 {
+    9000
+}
+
+impl Default for MetricsConfig {
+    fn default() -> Self {
+        Self {
+            port: default_metrics_config(),
         }
     }
 }
@@ -96,7 +116,7 @@ impl KafkaClient {
     }
 
     pub async fn consume_from_kafka<S: KafkaSink>(&self, mut sink: S) {
-        let topic = format!("{}.event.*", self.topic.as_str());
+        let topic = format!("{}.events.*", self.topic.as_str());
         let rel_topic = format!("{}.relations", self.topic);
 
         self.consumer
@@ -170,9 +190,12 @@ impl KafkaClient {
     }
 }
 
-pub fn init_metrics() {
+pub fn init_metrics(config: MetricsConfig) {
+    let addr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED.into(), config.port));
+
     let builder = metrics_exporter_prometheus::PrometheusBuilder::new();
     builder
+        .with_http_listener(addr)
         .install_recorder()
         .expect("Failed to install recorder");
     metrics::describe_counter!(

@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use bumpalo::Bump;
 use cdc_avro::{ChangeEvent, PgValue, Relation};
-use cdc_sink::TableNames;
 use cdc_sink::{KafkaConfig, KafkaSink};
+use cdc_sink::{MetricsConfig, TableNames};
 use config::Config;
 use feldera_rest_api::Client;
 use serde::Deserialize;
@@ -23,6 +23,9 @@ pub enum Error {
 pub struct BridgeConfig {
     pub kafka: KafkaConfig,
     pub feldera: FelderaConfig,
+
+    #[serde(default)]
+    pub metrics: MetricsConfig,
 }
 
 #[derive(Deserialize, Default)]
@@ -126,14 +129,14 @@ impl KafkaSink for FelderaConnector {
 
 #[tokio::main]
 async fn main() {
-    cdc_sink::init_metrics();
-
     let config: BridgeConfig = Config::builder()
         .add_source(config::File::with_name("feldera-connector"))
         .build()
         .expect("Failed to load feldera-connector config")
         .try_deserialize()
         .expect("Feldera-connector config was malformed");
+
+    cdc_sink::init_metrics(config.metrics);
 
     let arena = &Bump::with_capacity(2048);
 

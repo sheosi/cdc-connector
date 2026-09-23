@@ -2,6 +2,8 @@
 
 Postgres -> Kafka CDC pipeline with schema sharing, per-transaction batching, and exactly-once semantics.
 
+**NOTE: This is still in heavy development**
+
 ## Features
 
 - Decode Postgres logical replication WAL.

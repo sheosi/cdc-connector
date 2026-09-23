@@ -57,8 +57,15 @@ pub struct PostgresConfig {
     password: String,
     slot_name: String,
 
+    #[serde(default = "default_port")]
+    port: u16,
+
     #[serde(default = "default_publication")]
     publication: String,
+}
+
+fn default_port() -> u16 {
+    5432
 }
 
 fn default_publication() -> String {
@@ -80,7 +87,7 @@ pub async fn start_wal_input<P: Producer>(
         own_config.publication,
     )
     .with_start_lsn(Lsn(last_lsn))
-    .with_port(5400);
+    .with_port(own_config.port);
 
     configure_replica_identity(&pg_config, replica_identity_full)
         .await

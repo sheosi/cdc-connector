@@ -1,6 +1,6 @@
 use bumpalo::{Bump, collections::CollectIn};
 use cdc_avro::{ChangeEvent, Field, PgValue, Relation, ReplicaKind};
-use cdc_sink::{KafkaConfig, KafkaSink, TableNames};
+use cdc_sink::{KafkaConfig, KafkaSink, MetricsConfig, TableNames};
 use config::Config;
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
@@ -17,16 +17,16 @@ mod statements;
 
 #[tokio::main]
 async fn main() {
-    cdc_sink::init_metrics();
-
-    let arena = Bump::with_capacity(2048);
-
     let config: BridgeConfig = Config::builder()
-        .add_source(config::File::with_name("feldera-connector"))
+        .add_source(config::File::with_name("postgres-connector"))
         .build()
         .expect("Failed to find postgres-connect config")
         .try_deserialize()
         .expect("postgres-connect config is malformed");
+
+    cdc_sink::init_metrics(config.metrics);
+
+    let arena = Bump::with_capacity(2048);
 
     let kafka = config.kafka.connect().await;
     let relations = kafka
@@ -53,6 +53,9 @@ enum BridgeError {
 struct BridgeConfig {
     kafka: KafkaConfig,
     postgres: PostgresConfig,
+
+    #[serde(default)]
+    metrics: MetricsConfig,
 }
 
 #[derive(Deserialize)]

@@ -1,3 +1,4 @@
+use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::time::Duration;
 
 use anyhow::Result;
@@ -123,7 +124,30 @@ impl CdcProducer for KafkaProducer {
 struct ProducerConfig {
     postgres: cdc_wal_reader::PostgresConfig,
     kafka: KafkaConfig,
+
+    #[serde(default)]
+    metrics: MetricsConfig,
+
+    #[serde(default)]
     will_connect_to_feldera: bool,
+}
+
+#[derive(Deserialize)]
+struct MetricsConfig {
+    #[serde(default = "default_metrics_config")]
+    port: u16,
+}
+
+fn default_metrics_config() -> u16 {
+    9000
+}
+
+impl Default for MetricsConfig {
+    fn default() -> Self {
+        Self {
+            port: default_metrics_config(),
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -258,8 +282,21 @@ async fn check_topics(kafka_config: &KafkaConfig) -> Result<(), ()> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let own_config: ProducerConfig = config::Config::builder()
+        .add_source(config::File::with_name("cdc-producer"))
+        .build()
+        .expect("Failed to find cdc-producer config")
+        .try_deserialize()
+        .expect("cdc-producer config is malformated");
+
+    let addr = SocketAddr::V4(SocketAddrV4::new(
+        Ipv4Addr::UNSPECIFIED.into(),
+        own_config.metrics.port,
+    ));
+
     let builder = metrics_exporter_prometheus::PrometheusBuilder::new();
     builder
+        .with_http_listener(addr)
         .install_recorder()
         .expect("Failed to install recorder");
 
@@ -284,13 +321,6 @@ async fn main() -> Result<()> {
         "cdc_kafka_lag_seconds",
         "The lag introduced by Kafka, in seconds"
     );
-
-    let own_config: ProducerConfig = config::Config::builder()
-        .add_source(config::File::with_name("cdc-producer"))
-        .build()
-        .expect("Failed to find cdc-producer config")
-        .try_deserialize()
-        .expect("cdc-producer config is malformated");
 
     check_topics(&own_config.kafka)
         .await
