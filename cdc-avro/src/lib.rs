@@ -39,6 +39,18 @@ pub enum FromAvroError {
     Avro(#[from] serde_avro_fast::de::DeError),
 }
 
+impl PartialEq for FromAvroError {
+    fn eq(&self, other: &Self) -> bool {
+        use FromAvroError::*;
+
+        match (self, other) {
+            (NoEvents, NoEvents) => true,
+            (Avro(_), Avro(_)) => true,
+            _=> false
+        }
+    }
+}
+
 #[derive(Serialize, Debug, Clone, PartialEq)]
 pub struct ChangeEvent<'a> {
     #[serde(borrow)]
@@ -65,7 +77,7 @@ impl<'a> ChangeEvent<'a> {
 
 const CHANGE_EVENT_SCHEMA_STR: &str = r#"{"type":"record","name":"ChangeEvent","fields":[{"name":"op","type":[{"type":"record","name":"Insert","fields":[{"name":"row","type":{"type":"array","items":[{"type":"record","name":"Text","fields":[{"name":"Text","type":"string"}]},{"type":"record","name":"Int4","fields":[{"name":"Int4","type":"int"}]}]}}]},{"type":"record","name":"Update","fields":[{"name":"old","type":{"type":"array","items":["Text","Int4"]}},{"name":"row","type":{"type":"array","items":["Text","Int4"]}}]},{"type":"record","name":"Delete","fields":[{"name":"old","type":{"type":"array","items":["Text","Int4"]}}]}]},{"name":"rel","type":"int"}]}"#;
 
-const RELATION_SCHEMA_STR: &str = r#"{"type":"record","name":"Relation","fields":[{"name":"oid","type":"int"},{"name":"namespace","type":"string"},{"name":"relname","type":"string"},{"name":"fields","type":{"type":"array","items":{"type":"record","name":"Field","fields":[{"name":"name","type":"string"},{"name":"kind","type":"string"},{"name":"is_key","type":"boolean"}]}}}]}"#;
+const RELATION_SCHEMA_STR: &str = r#"{"type":"record","name":"Relation","fields":[{"name":"relation_oid","type":"int"},{"name":"namespace","type":"string"},{"name":"name","type":"string"},{"name":"fields","type":{"type":"array","items":{"type":"record","name":"Field","fields":[{"name":"name","type":"string"},{"name":"kind","type":"string"},{"name":"is_key","type":"boolean"}]}}}]}"#;
 
 const CHANGE_EVENT_SCHEMA: LazyLock<Schema> = LazyLock::new(|| {
     CHANGE_EVENT_SCHEMA_STR
@@ -180,6 +192,8 @@ impl From<u32> for PgValue<'_> {
 #[cfg(test)]
 mod tests {
 
+    use std::assert_matches;
+
     use super::*;
 
     use bumpalo::{Bump, vec};
@@ -187,24 +201,54 @@ mod tests {
     fn roundtrip(event: ChangeEvent<'_>) {
         let bytes = event.into_avro().unwrap();
 
-        let back = ChangeEvent::from_avro(&bytes).unwrap();
+        let back = ChangeEvent::from_avro(&bytes);
 
-        assert_eq!(event, back);
+        assert_eq!(Ok(event), back);
+    }
+
+    fn roundtrip_bugged(event: ChangeEvent<'_>) {
+        let mut bytes = event.into_avro().unwrap();
+
+        bytes[3] = 124;
+        bytes.pop();
+
+        let back = ChangeEvent::from_avro(&bytes);
+
+        assert_matches!(back, Err(_));
     }
 
     fn roundtrip_rel(relation: Relation<'_>) {
         let bytes = relation.into_avro().unwrap();
 
-        let back = Relation::from_avro(&bytes).unwrap();
+        let back = Relation::from_avro(&bytes);
 
-        assert_eq!(relation, back);
+        assert_eq!(Ok(relation), back);
+    }
+
+    fn roundtrip_rel_bugged(relation: Relation<'_>) {
+        let mut bytes = relation.into_avro().unwrap();
+
+        bytes[3] = 124;
+        bytes.pop();
+
+        let back = Relation::from_avro(&bytes);
+
+        assert_matches!(back, Err(_));
     }
 
     fn text_field(field: &str) -> Field {
         Field {
-            is_key: true,
+            is_key: false,
             name: field.to_string(),
             kind: FieldKind::Text,
+        }
+    }
+
+    fn int4_field_key(field: &str) -> Field {
+        Field {
+            is_key: true,
+            name: field.to_string(),
+            kind: FieldKind::Int4,
         }
     }
 
@@ -225,6 +269,20 @@ mod tests {
     }
 
     #[test]
+    fn roundtrip_event_insert_empty() {
+        let arena = Bump::with_capacity(1024);
+
+        let event = ChangeEvent {
+            op: Op::Insert {
+                row: vec![in &arena;],
+            },
+            rel: 1024,
+        };
+
+        roundtrip(event);
+    }
+
+    #[test]
     fn roundtrip_event_update() {
         let arena = Bump::with_capacity(1024);
 
@@ -233,6 +291,25 @@ mod tests {
                 old: vec![in &arena;
                     PgValue::Int4(1),
                 ],
+
+                row: vec![in &arena;
+                    PgValue::Text("hola"),
+                ],
+            },
+
+            rel: 1024,
+        };
+
+        roundtrip(event);
+    }
+
+    #[test]
+    fn roundtrip_event_update_empty() {
+        let arena = Bump::with_capacity(1024);
+
+        let event = ChangeEvent {
+            op: Op::Update {
+                old: vec![in &arena;],
 
                 row: vec![in &arena;
                     PgValue::Text("hola"),
@@ -264,6 +341,39 @@ mod tests {
     }
 
     #[test]
+    fn roundtrip_event_delete_empty() {
+        let arena = Bump::with_capacity(1024);
+
+        let event = ChangeEvent {
+            op: Op::Delete {
+                old: vec![in &arena;],
+            },
+
+            rel: 1024,
+        };
+
+        roundtrip(event);
+    }
+
+    #[test]
+    fn roundtrip_event_bugged() {
+        let arena = Bump::with_capacity(1024);
+
+        let event = ChangeEvent {
+            op: Op::Delete {
+                old: vec![in &arena;
+                    PgValue::Int4(1),
+                    PgValue::Text("HOLA")
+                ],
+            },
+
+            rel: 1024,
+        };
+
+        roundtrip(event);
+    }
+
+    #[test]
     fn roundtrip_relation_simple() {
         let arena = Bump::new();
 
@@ -276,5 +386,38 @@ mod tests {
         };
 
         roundtrip_rel(relation);
+    }
+
+    #[test]
+    fn roundtrip_relation_multiple() {
+        let arena = Bump::new();
+
+        let relation = Relation {
+            relation_oid: 1,
+            name: "Simple".to_string(),
+            namespace: "Public".to_string(),
+            fields: vec![in &arena;
+                int4_field_key("id"),
+                text_field("Hola")
+            ],
+            replica_id: ReplicaKind::Row,
+        };
+
+        roundtrip_rel(relation);
+    }
+
+    #[test]
+    fn roundtrip_relation_bugged() {
+        let arena = Bump::new();
+
+        let relation = Relation {
+            relation_oid: 1,
+            name: "Simple".to_string(),
+            namespace: "Public".to_string(),
+            fields: vec![in &arena; text_field("Hola")],
+            replica_id: ReplicaKind::Row,
+        };
+
+        roundtrip_rel_bugged(relation);
     }
 }
