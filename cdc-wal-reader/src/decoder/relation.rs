@@ -17,6 +17,12 @@ pub struct RelationData<'a> {
 
 impl<'a> RelationData<'a> {
     pub fn parse(data: Bytes, arena: &'a Bump) -> Result<RelationData<'a>, DecoderError> {
+        // 'R' (1B) + rel oid (4B) + namespace end (1B) + relname end (1B)
+        // + repl_id (1B) + num_cols (2B)
+        if data.len() < 10 {
+            return Err(DecoderError::TruncatedInput);
+        }
+
         let relation_oid = u32::from_be_bytes(data[1..5].try_into().expect(""));
         let namespace = CStr::from_bytes_until_nul(&data[5..])
             .map_err(|_| DecoderError::TruncatedInput)?
@@ -27,6 +33,11 @@ impl<'a> RelationData<'a> {
             .map_err(|_| DecoderError::TruncatedInput)?
             .to_str()?
             .to_string();
+
+        // Check for both replica id an numbers of cols
+        if data.len() < 5 + namespace.len() + 1 + relname.len() + 3 {
+            return Err(DecoderError::TruncatedInput);
+        }
 
         let replica_id_pos = 5 + namespace.len() + 1 + relname.len() + 1;
         let replica_id = match data[replica_id_pos] {
@@ -115,6 +126,11 @@ pub enum FieldParseResult {
 /// The Field might be logical, and thus not present, in those cases we don't
 /// store it, but we need the size of it
 fn parse_field(data: &[u8]) -> Result<FieldParseResult, DecoderError> {
+    // The minimum: flag (1B) + string_end (1B) + oid (4B) + mod (4B)
+    if data.len() < 10 {
+        return Err(DecoderError::TruncatedInput);
+    }
+
     let flag = data[0];
     let name = CStr::from_bytes_until_nul(&data[1..])
         .map_err(|_| DecoderError::TruncatedInput)?
@@ -235,7 +251,7 @@ mod test {
     }
 
     #[test]
-    fn empty() {
+    fn no_relation() {
         let data = Bytes::from_static(&[b'R']);
 
         let arena = Bump::new();
@@ -246,5 +262,201 @@ mod test {
     }
 
     #[test]
-    fn no_relation() {}
+    fn no_namespace() {
+        let data = Bytes::from_static(&[b'R', 0, 0, 0, 0]);
+
+        let arena = Bump::new();
+
+        let relation = RelationData::parse(data, &arena);
+
+        assert_eq!(relation, Err(DecoderError::TruncatedInput));
+    }
+
+    #[test]
+    fn no_relname() {
+        let data = Bytes::from_static(&[
+            b'R', // Relation
+            0, 0, 0, 1, // Relation OID
+            b'p', b'u', b'b', b'l', b'i', b'c', 0, // Namespace
+        ]);
+
+        let arena = Bump::new();
+
+        let relation = RelationData::parse(data, &arena);
+
+        assert_eq!(relation, Err(DecoderError::TruncatedInput));
+    }
+
+    #[test]
+    fn namespace_unfinished() {
+        let data = Bytes::from_static(&[
+            b'R', // Relation
+            0, 0, 0, 1, // Relation OID
+            b'p', b'u', b'b', b'l', b'i', b'c', // Namespace
+        ]);
+
+        let arena = Bump::new();
+
+        let relation = RelationData::parse(data, &arena);
+
+        assert_eq!(relation, Err(DecoderError::TruncatedInput));
+    }
+
+    #[test]
+    fn relname_unfinished() {
+        let data = Bytes::from_static(&[
+            b'R', // Relation
+            0, 0, 0, 1, // Relation OID
+            b'p', b'u', b'b', b'l', b'i', b'c', 0, // Namespace
+            b'u', b's', b'e', b'r', b's', // Relation name
+        ]);
+
+        let arena = Bump::new();
+
+        let relation = RelationData::parse(data, &arena);
+
+        assert_eq!(relation, Err(DecoderError::TruncatedInput));
+    }
+
+    #[test]
+    fn no_cols() {
+        let data = Bytes::from_static(&[
+            b'R', // Relation
+            0, 0, 0, 1, // Relation OID
+            b'p', b'u', b'b', b'l', b'i', b'c', 0, // Namespace
+            b'u', b's', b'e', b'r', b's', 0, // Relation name
+            0, // Replica identity setting
+        ]);
+
+        let arena = Bump::new();
+
+        let relation = RelationData::parse(data, &arena);
+
+        assert_eq!(relation, Err(DecoderError::TruncatedInput));
+    }
+
+    #[test]
+    fn wrong_cols() {
+        let data = Bytes::from_static(&[
+            b'R', // Relation
+            0, 0, 0, 1, // Relation OID
+            b'p', b'u', b'b', b'l', b'i', b'c', 0, // Namespace
+            b'u', b's', b'e', b'r', b's', 0, // Relation name
+            0, // Replica identity setting
+            0, 1, // Number of columns
+        ]);
+
+        let arena = Bump::new();
+
+        let relation = RelationData::parse(data, &arena);
+
+        assert_eq!(relation, Err(DecoderError::TruncatedInput));
+    }
+
+    #[test]
+    fn no_colname() {
+        let data = Bytes::from_static(&[
+            b'R', // Relation
+            0, 0, 0, 1, // Relation OID
+            b'p', b'u', b'b', b'l', b'i', b'c', 0, // Namespace
+            b'u', b's', b'e', b'r', b's', 0, // Relation name
+            0, // Replica identity setting
+            0, 1, // Number of columns
+            // Column 1
+            1, // Flags: Is key
+        ]);
+
+        let arena = Bump::new();
+
+        let relation = RelationData::parse(data, &arena);
+
+        assert_eq!(relation, Err(DecoderError::TruncatedInput));
+    }
+
+    #[test]
+    fn colname_unfinished() {
+        let data = Bytes::from_static(&[
+            b'R', // Relation
+            0, 0, 0, 1, // Relation OID
+            b'p', b'u', b'b', b'l', b'i', b'c', 0, // Namespace
+            b'u', b's', b'e', b'r', b's', 0, // Relation name
+            0, // Replica identity setting
+            0, 1, // Number of columns
+            // Column 1
+            1, // Flags: Is key
+            b'i', b'd',
+        ]);
+
+        let arena = Bump::new();
+
+        let relation = RelationData::parse(data, &arena);
+
+        assert_eq!(relation, Err(DecoderError::TruncatedInput));
+    }
+
+    #[test]
+    fn no_type_oid() {
+        let data = Bytes::from_static(&[
+            b'R', // Relation
+            0, 0, 0, 1, // Relation OID
+            b'p', b'u', b'b', b'l', b'i', b'c', 0, // Namespace
+            b'u', b's', b'e', b'r', b's', 0, // Relation name
+            0, // Replica identity setting
+            0, 1, // Number of columns
+            // Column 1
+            1, // Flags: Is key
+            b'i', b'd', 0, // Name of the column: id
+        ]);
+
+        let arena = Bump::new();
+
+        let relation = RelationData::parse(data, &arena);
+
+        assert_eq!(relation, Err(DecoderError::TruncatedInput));
+    }
+
+    #[test]
+    fn no_attrmod() {
+        let data = Bytes::from_static(&[
+            b'R', // Relation
+            0, 0, 0, 1, // Relation OID
+            b'p', b'u', b'b', b'l', b'i', b'c', 0, // Namespace
+            b'u', b's', b'e', b'r', b's', 0, // Relation name
+            0, // Replica identity setting
+            0, 1, // Number of columns
+            // Column 1
+            1, // Flags: Is key
+            b'i', b'd', 0, // Name of the column: id
+            0, 0, 0, 23, // Type oid (int4)
+        ]);
+
+        let arena = Bump::new();
+
+        let relation = RelationData::parse(data, &arena);
+
+        assert_eq!(relation, Err(DecoderError::TruncatedInput));
+    }
+
+    #[test]
+    fn wrong_type_oid() {
+        let data = Bytes::from_static(&[
+            b'R', // Relation
+            0, 0, 0, 1, // Relation OID
+            b'p', b'u', b'b', b'l', b'i', b'c', 0, // Namespace
+            b'u', b's', b'e', b'r', b's', 0, // Relation name
+            0, // Replica identity setting
+            0, 1, // Number of columns
+            // Column 1
+            1, // Flags: Is key
+            b'i', b'd', 0, // Name of the column: id
+            0, 0, 0, 0, // WRONG! Doesn't exist
+            0, 0, 0, 0, // attrmod
+        ]);
+
+        let arena = Bump::new();
+
+        let relation = RelationData::parse(data, &arena);
+
+        assert_eq!(relation, Err(DecoderError::InvalidOid(0)));
+    }
 }
