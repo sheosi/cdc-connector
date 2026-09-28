@@ -13,7 +13,7 @@ use simdutf8::basic::from_utf8 as simd_from_utf8;
 #[cfg(test)]
 use crate::decoder::relation::KeyField;
 #[cfg(test)]
-use cdc_avro::{FieldKind, Relation};
+use cdc_avro::{FieldKind, arena::Relation};
 
 pub fn get_old_tuple_data<'a>(
     data: &'a [u8],

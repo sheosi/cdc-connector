@@ -1,7 +1,10 @@
 use std::collections::HashMap;
 
 use bumpalo::Bump;
-use cdc_avro::{ChangeEvent, PgValue, Relation};
+use cdc_avro::{
+    PgValue,
+    owned::{ChangeEvent, Op, Relation},
+};
 use cdc_sink::{KafkaConfig, KafkaSink};
 use cdc_sink::{MetricsConfig, TableNames};
 use config::Config;
@@ -42,8 +45,8 @@ pub struct FelderaConnector {
 
 #[derive(Serialize)]
 enum FelderaEvent<'a> {
-    Insert(bumpalo::collections::Vec<'a, PgValue<'a>>),
-    Delete(bumpalo::collections::Vec<'a, PgValue<'a>>),
+    Insert(Vec<PgValue<'a>>),
+    Delete(Vec<PgValue<'a>>),
 }
 
 impl<'a> FelderaEvent<'a> {
@@ -52,12 +55,12 @@ impl<'a> FelderaEvent<'a> {
 
         for op in batch.into_iter() {
             match op.op {
-                cdc_avro::Op::Insert { row } => result.push(FelderaEvent::Insert(row)),
-                cdc_avro::Op::Update { old, row } => {
+                Op::Insert { row } => result.push(FelderaEvent::Insert(row)),
+                Op::Update { old, row } => {
                     result.push(FelderaEvent::Delete(old));
                     result.push(FelderaEvent::Insert(row));
                 }
-                cdc_avro::Op::Delete { old } => {
+                Op::Delete { old } => {
                     result.push(FelderaEvent::Delete(old));
                 }
             }
@@ -80,7 +83,7 @@ impl<'a> FelderaEvent<'a> {
 }
 
 impl FelderaConnector {
-    pub fn new(base_url: &str, pipeline: String, relations: HashMap<u32, Relation<'_>>) -> Self {
+    pub fn new(base_url: &str, pipeline: String, relations: HashMap<u32, Relation>) -> Self {
         let inner = Client::new(base_url, feldera_rest_api::RetryPolicy::default());
 
         Self {
@@ -119,7 +122,7 @@ impl KafkaSink for FelderaConnector {
         Ok(())
     }
 
-    async fn on_relation<'a>(&mut self, relation: Relation<'a>) -> Result<(), String> {
+    async fn on_relation(&mut self, relation: Relation) -> Result<(), String> {
         self.table_names
             .insert(relation.relation_oid, relation.name);
 
@@ -143,7 +146,7 @@ async fn main() {
 
     let kafka = config.kafka.connect().await;
     let relations = kafka
-        .load_relations(&arena, &relations_arena)
+        .load_relations(&arena)
         .await
         .expect("Failed to load relations");
 

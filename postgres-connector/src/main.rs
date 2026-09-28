@@ -1,5 +1,8 @@
 use bumpalo::{Bump, collections::CollectIn};
-use cdc_avro::{ChangeEvent, Field, PgValue, Relation, ReplicaKind};
+use cdc_avro::{
+    Field, PgValue, ReplicaKind,
+    owned::{ChangeEvent, Op, Relation},
+};
 use cdc_sink::{KafkaConfig, KafkaSink, MetricsConfig, TableNames};
 use config::Config;
 use serde::Deserialize;
@@ -31,7 +34,7 @@ async fn main() {
 
     let kafka = config.kafka.connect().await;
     let relations = kafka
-        .load_relations(&arena, &relations_arena)
+        .load_relations(&arena)
         .await
         .expect("Failed to load relations");
 
@@ -90,7 +93,7 @@ pub struct PostgresSink {
 impl PostgresSink {
     async fn new(
         config: PostgresConfig,
-        relations: HashMap<u32, Relation<'_>>,
+        relations: HashMap<u32, Relation>,
     ) -> Result<Self, tokio_postgres::Error> {
         let (clt, _conn) = tokio_postgres::connect(&config.to_postgres_string(), NoTls).await?;
 
@@ -107,7 +110,7 @@ impl PostgresSink {
 
     async fn perform_op<'a>(&'a mut self, event: ChangeEvent<'a>) -> Result<(), BridgeError> {
         match event.op {
-            cdc_avro::Op::Insert { row } => {
+            Op::Insert { row } => {
                 let insert_stmt = self
                     .insert_stmt_cache
                     .get(
@@ -135,7 +138,7 @@ impl PostgresSink {
 
                 self.arena.reset();
             }
-            cdc_avro::Op::Update { old: _, row } => {
+            Op::Update { old: _, row } => {
                 let update_stmt = self
                     .upsert_stmt_cache
                     .get(&self.client, event.rel, &self.relation_cache, &self.arena)
@@ -153,7 +156,7 @@ impl PostgresSink {
                 }
             }
 
-            cdc_avro::Op::Delete { old } => {
+            Op::Delete { old } => {
                 let delete_stmt = self
                     .delete_stmt_cache
                     .get(&self.client, event.rel, &self.relation_cache, &self.arena)
@@ -208,7 +211,7 @@ impl KafkaSink for PostgresSink {
         Ok(())
     }
 
-    async fn on_relation<'a>(&mut self, relation: Relation<'a>) -> Result<(), String> {
+    async fn on_relation(&mut self, relation: Relation) -> Result<(), String> {
         self.relation_cache.update(relation);
 
         Ok(())
@@ -269,7 +272,7 @@ impl RelationCache {
         }
     }
 
-    pub fn from_rels<'a>(rels: &HashMap<u32, Relation<'a>>) -> Self {
+    pub fn from_rels<'a>(rels: &HashMap<u32, Relation>) -> Self {
         let identities = rels
             .iter()
             .map(|(i, v)| (*i, extract_key_identity(&v)))
@@ -301,7 +304,7 @@ impl RelationCache {
         }
     }
 
-    pub fn update(&mut self, relation: Relation<'_>) {
+    pub fn update(&mut self, relation: Relation) {
         self.identities
             .insert(relation.relation_oid, extract_key_identity(&relation));
         self.table_names
@@ -322,7 +325,7 @@ fn extract_keys_pos(fields: &[Field]) -> HashSet<usize> {
         })
 }
 
-fn extract_key_identity(rel: &Relation<'_>) -> RelationIdentity {
+fn extract_key_identity(rel: &Relation) -> RelationIdentity {
     match rel.replica_id {
         ReplicaKind::Keys => RelationIdentity::Keys(extract_keys_pos(&rel.fields)),
         ReplicaKind::Row => RelationIdentity::Full,
@@ -331,7 +334,7 @@ fn extract_key_identity(rel: &Relation<'_>) -> RelationIdentity {
 
 fn extract_keys<'a>(
     arena: &'a Bump,
-    row: bumpalo::collections::Vec<'a, PgValue<'a>>,
+    row: Vec<PgValue<'a>>,
 ) -> bumpalo::collections::Vec<'a, ToSqlWrapper<'a>> {
     row.into_iter().map(|v| ToSqlWrapper(v)).collect_in(arena)
 }

@@ -1,7 +1,7 @@
 use bumpalo::collections::Vec;
 use bumpalo::{Bump, collections::CollectIn};
 use bytes::Bytes;
-use cdc_avro::{Field, FieldAccess, FieldKind, Relation, ReplicaKind};
+use cdc_avro::{Field, FieldAccess, FieldKind, ReplicaKind, arena::Relation};
 use std::ffi::CStr;
 
 use crate::decoder::DecoderError;

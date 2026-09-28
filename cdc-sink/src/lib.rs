@@ -6,7 +6,7 @@ use std::{
 
 use ahash::RandomState;
 use bumpalo::Bump;
-use cdc_avro::{ChangeEvent, Relation};
+use cdc_avro::owned::{ChangeEvent, Relation};
 use chrono::Utc;
 use futures_util::StreamExt;
 use rdkafka::{
@@ -79,9 +79,9 @@ pub trait KafkaSink {
         event: ChangeEvent<'a>,
     ) -> impl std::future::Future<Output = Result<(), String>>;
 
-    fn on_relation<'a>(
+    fn on_relation(
         &mut self,
-        relation: Relation<'a>,
+        relation: Relation,
     ) -> impl std::future::Future<Output = Result<(), String>>;
 }
 
@@ -91,11 +91,7 @@ pub struct KafkaClient {
 }
 
 impl KafkaClient {
-    pub async fn load_relations<'a>(
-        &self,
-        arena: &Bump,
-        _rels_arena: &'a Bump,
-    ) -> Result<HashMap<u32, Relation<'a>>, ()> {
+    pub async fn load_relations(&self, arena: &Bump) -> Result<HashMap<u32, Relation>, ()> {
         let rel_topic = bumpalo::format!(in arena, "{}.relations", self.topic);
         self.consumer.subscribe(&[&rel_topic]).map_err(|_| ())?;
 
@@ -221,7 +217,7 @@ impl TableNames {
         Self(HashMap::default())
     }
 
-    pub fn from_rels(rels: &HashMap<u32, Relation<'_>>) -> Self {
+    pub fn from_rels(rels: &HashMap<u32, Relation>) -> Self {
         Self(
             rels.into_iter()
                 .map(|(i, r)| (*i, r.name.clone()))

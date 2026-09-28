@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use ahash::RandomState;
 use bumpalo::Bump;
-use cdc_avro::{ChangeEvent, Relation};
+use cdc_avro::arena::{ChangeEvent, Relation};
 use pgwire_replication::{Lsn, ReplicationClient, ReplicationEvent};
 
 pub use pgwire_replication::ReplicationConfig;
@@ -21,12 +21,13 @@ async fn send_to_producer<'a, P>(
 ) where
     P: Producer,
 {
+    use cdc_avro::arena::Op;
     match event_res {
         Ok((event, relation)) => {
             let kind = match &event.op {
-                cdc_avro::Op::Insert { row: _ } => "insert",
-                cdc_avro::Op::Update { old: _, row: _ } => "update",
-                cdc_avro::Op::Delete { old: _ } => "delete",
+                Op::Insert { row: _ } => "insert",
+                Op::Update { old: _, row: _ } => "update",
+                Op::Delete { old: _ } => "delete",
             };
 
             metrics::counter!("cdc_events_produced_total", "op"=> kind, "table" =>relation.inner.name.clone())

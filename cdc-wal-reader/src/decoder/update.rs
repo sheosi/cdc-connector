@@ -2,7 +2,7 @@ use std::{collections::HashMap, time::Instant};
 
 use ahash::RandomState;
 use bumpalo::Bump;
-use cdc_avro::ChangeEvent;
+use cdc_avro::arena::{ChangeEvent, Op};
 
 use crate::decoder::{
     DecoderError,
@@ -38,7 +38,7 @@ pub fn parse<'a>(
     let new_data = get_new_tuple_data(&data[old_data_end + 9..], &relation.inner.fields, &arena)?;
 
     let event = ChangeEvent {
-        op: cdc_avro::Op::Update { old, row: new_data },
+        op: Op::Update { old, row: new_data },
         rel: relation_oid,
     };
 
@@ -53,7 +53,10 @@ mod test {
 
     use bumpalo::{Bump, collections::vec, vec};
     use bytes::Bytes;
-    use cdc_avro::{ChangeEvent, Field, FieldKind, PgValue, Relation};
+    use cdc_avro::{
+        Field, FieldKind, PgValue,
+        arena::{ChangeEvent, Op, Relation},
+    };
 
     use crate::decoder::{
         DecoderError,
@@ -89,7 +92,7 @@ mod test {
         let event = parse(&data, &relation_map, &arena);
 
         let event_example = ChangeEvent {
-            op: cdc_avro::Op::Update {
+            op: Op::Update {
                 old: bumpalo::vec![in &arena;PgValue::Int4(1)],
                 row: vec![in &arena;
                     PgValue::Int4(1),
@@ -133,7 +136,7 @@ mod test {
         let event = parse(&data, &relation_map, &arena);
 
         let event_example = ChangeEvent {
-            op: cdc_avro::Op::Update {
+            op: Op::Update {
                 old: vec![ in &arena;
                     cdc_avro::PgValue::Int4(1),
                     cdc_avro::PgValue::Text("hello"),

@@ -2,7 +2,7 @@ use ahash::RandomState;
 use std::{collections::HashMap, time::Instant};
 
 use bumpalo::Bump;
-use cdc_avro::ChangeEvent;
+use cdc_avro::arena::{ChangeEvent, Op};
 
 use crate::decoder::{DecoderError, common::get_new_tuple_data, relation::RelationData};
 
@@ -26,7 +26,7 @@ pub fn parse<'a>(
     let row = get_new_tuple_data(&data[5..], &relation.inner.fields, arena)?;
 
     let event = ChangeEvent {
-        op: cdc_avro::Op::Insert { row },
+        op: Op::Insert { row },
         rel: relation.inner.relation_oid,
     };
 
@@ -44,9 +44,10 @@ mod test {
     use bytes::Bytes;
 
     use cdc_avro::{
-        ChangeEvent, Field,
+        Field,
         FieldKind::{Int4, Text},
-        PgValue, Relation, ReplicaKind,
+        PgValue, ReplicaKind,
+        arena::{ChangeEvent, Op, Relation},
     };
 
     use bumpalo::vec;
@@ -124,7 +125,7 @@ mod test {
         ];
 
         let event_example = ChangeEvent {
-            op: cdc_avro::Op::Insert { row },
+            op: Op::Insert { row },
             rel: 1,
         };
 
@@ -152,7 +153,7 @@ mod test {
         ];
 
         let event_example = ChangeEvent {
-            op: cdc_avro::Op::Insert { row },
+            op: Op::Insert { row },
             rel: 16390,
         };
 

@@ -4,7 +4,7 @@ use std::time::Duration;
 use anyhow::Result;
 
 use bumpalo::Bump;
-use cdc_avro::{ChangeEvent, Relation};
+use cdc_avro::arena::{ChangeEvent, Relation};
 use cdc_wal_reader::Producer as CdcProducer;
 use futures_util::stream::StreamExt;
 use rdkafka::admin::{AdminClient, AdminOptions, NewTopic, ResourceSpecifier, TopicReplication};
