@@ -27,6 +27,10 @@ pub fn parse<'a, F: FieldAccess>(
         Ok((cols, last_pos))
     }
 
+    if data.len() < 2 {
+        return Err(DecoderError::TruncatedInput);
+    }
+
     // Network byte order is be
     let n_cols = u16::from_be_bytes(
         data[0..2]
@@ -119,16 +123,21 @@ fn parse_value<'a, F: FieldAccess>(
     data: &'a [u8],
     field: &F,
 ) -> Result<(PgValue<'a>, usize), DecoderError> {
+    if data.len() == 0 {
+        return Err(DecoderError::TruncatedInput);
+    }
+
     match data[0] {
         b'n' => todo!(), //Ok((TupleCol::Null, 1)),
         b'u' => todo!(), //Ok((TupleCol::Toasted, 1)),
         b't' => {
-            // Here's be because we are using network endianness (always big endian)
-            let l = u32::from_be_bytes(
-                data[1..5]
-                    .try_into()
-                    .map_err(|_| DecoderError::TruncatedInput)?,
-            ) as usize;
+            if data.len() < 5 {
+                return Err(DecoderError::TruncatedInput);
+            }
+
+            // Network endianness (always big endian). Length is guaranteed by the
+            // `data.len() < 5` check above, so unwrap is safe.
+            let l = u32::from_be_bytes(data[1..5].try_into().unwrap()) as usize;
 
             if data.len() < 5 + l {
                 return Err(DecoderError::TruncatedInput);
@@ -139,6 +148,11 @@ fn parse_value<'a, F: FieldAccess>(
             Ok((text, final_l))
         }
         b'b' => {
+            if data.len() < 5 {
+                return Err(DecoderError::TruncatedInput);
+            }
+
+            // Length of the binary data
             let l = u32::from_be_bytes(
                 data[1..5]
                     .try_into()
@@ -152,11 +166,13 @@ fn parse_value<'a, F: FieldAccess>(
                     if l != 4 {
                         return Err(DecoderError::WrongFieldKind(FieldKind::Int4));
                     }
-                    PgValue::Int4(u32::from_be_bytes(
-                        data[5..9]
-                            .try_into()
-                            .map_err(|_| DecoderError::TruncatedInput)?,
-                    ))
+
+                    if data.len() < 9 {
+                        return Err(DecoderError::TruncatedInput);
+                    }
+
+                    // Length is guaranteed by the `data.len() < 9` check above.
+                    PgValue::Int4(u32::from_be_bytes(data[5..9].try_into().unwrap()))
                 }
                 FieldKind::Text => todo!(),
             };
@@ -170,13 +186,14 @@ fn parse_value<'a, F: FieldAccess>(
 #[cfg(test)]
 mod test {
     use bumpalo::{Bump, vec};
-    use cdc_avro::PgValue;
+    use cdc_avro::{FieldKind::Int4, PgValue};
 
     use crate::decoder::{
+        DecoderError,
         common::{
             col_byte_id, col_text_name, get_example_rel, get_new_tuple_data, get_old_tuple_data,
         },
-        relation,
+        relation, tuple_data,
     };
 
     use super::parse;
@@ -227,5 +244,111 @@ mod test {
         let tuple_data_manual = vec![in &arena; col_byte_id(), col_text_name()];
 
         assert_eq!(tuple_data, Ok((tuple_data_manual, 21)));
+    }
+
+    #[test]
+    fn truncated_col() {
+        let data = [0];
+
+        let arena = Bump::new();
+
+        let relation = &get_example_rel(&arena);
+
+        let tuple_data = parse(&data, &arena, &relation.fields);
+
+        assert_eq!(tuple_data, Err(DecoderError::TruncatedInput))
+    }
+
+    #[test]
+    fn too_many_cols() {
+        let data = [0, 1];
+
+        let arena = Bump::new();
+
+        let relation = &get_example_rel(&arena);
+
+        let tuple_data = parse(&data, &arena, &relation.fields);
+
+        assert_eq!(tuple_data, Err(DecoderError::TruncatedInput))
+    }
+
+    #[test]
+    fn wrong_tuple_type() {
+        let data = [0, 1, b'c'];
+
+        let arena = Bump::new();
+
+        let relation = &get_example_rel(&arena);
+
+        let tuple_data = parse(&data, &arena, &relation.fields);
+
+        assert_eq!(tuple_data, Err(DecoderError::WrongColTypeKey(b'c')));
+    }
+
+    #[test]
+    fn truncated_t_size() {
+        let data = [0, 1, b't'];
+
+        let arena = Bump::new();
+
+        let relation = &get_example_rel(&arena);
+
+        let tuple_data = parse(&data, &arena, &relation.fields);
+
+        assert_eq!(tuple_data, Err(DecoderError::TruncatedInput));
+    }
+
+    #[test]
+    fn truncated_t_data() {
+        let data = [0, 1, b't', 0, 0, 0, 1];
+
+        let arena = Bump::new();
+
+        let relation = &get_example_rel(&arena);
+
+        let tuple_data = parse(&data, &arena, &relation.fields);
+
+        assert_eq!(tuple_data, Err(DecoderError::TruncatedInput));
+    }
+
+    #[test]
+    fn truncated_b_size() {
+        let data = [0, 1, b'b'];
+
+        let arena = Bump::new();
+
+        let relation = &get_example_rel(&arena);
+
+        let tuple_data = parse(&data, &arena, &relation.fields);
+
+        assert_eq!(tuple_data, Err(DecoderError::TruncatedInput));
+    }
+
+    #[test]
+    fn truncated_b_data() {
+        // The example rel says it's, it checks first for the type and then
+        // then whether the data is that size
+        let data = [0, 1, b'b', 0, 0, 0, 4];
+
+        let arena = Bump::new();
+
+        let relation = &get_example_rel(&arena);
+
+        let tuple_data = parse(&data, &arena, &relation.fields);
+
+        assert_eq!(tuple_data, Err(DecoderError::TruncatedInput));
+    }
+
+    #[test]
+    fn wrong_b_size() {
+        let data = [0, 1, b'b', 0, 0, 0, 1];
+
+        let arena = Bump::new();
+
+        let relation = &get_example_rel(&arena);
+
+        let tuple_data = parse(&data, &arena, &relation.fields);
+
+        assert_eq!(tuple_data, Err(DecoderError::WrongFieldKind(Int4)))
     }
 }

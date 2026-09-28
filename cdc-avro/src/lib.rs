@@ -121,7 +121,7 @@ impl<'a> Relation<'a> {
         Err(FromAvroError::NoEvents)
     }
 
-    pub fn to_avro(&self) -> Result<std::vec::Vec<u8>, serde_avro_fast::ser::SerError> {
+    pub fn into_avro(&self) -> Result<std::vec::Vec<u8>, serde_avro_fast::ser::SerError> {
         let schema = &RELATION_SCHEMA;
 
         let mut config = serde_avro_fast::ser::SerializerConfig::new(schema);
@@ -184,8 +184,24 @@ mod tests {
 
     use bumpalo::{Bump, vec};
 
+    fn roundtrip(event: ChangeEvent<'_>) {
+        let bytes = event.into_avro().unwrap();
+
+        let back = ChangeEvent::from_avro(&bytes).unwrap();
+
+        assert_eq!(event, back);
+    }
+
+    fn roundtrip_rel(relation: Relation<'_>) {
+        let bytes = relation.into_avro().unwrap();
+
+        let back = Relation::from_avro(&bytes).unwrap();
+
+        assert_eq!(relation, back);
+    }
+
     #[test]
-    fn back_and_forth() {
+    fn roundtrip_event_insert() {
         let arena = Bump::with_capacity(1024);
 
         let event = ChangeEvent {
@@ -197,11 +213,60 @@ mod tests {
             rel: 1024,
         };
 
-        let bytes = event.into_avro().unwrap();
+        roundtrip(event);
+    }
 
-        //Reader::new(std::io::Cursor::new(bytes))
-        //let back = ChangeEvent::from_avro(&bytes).unwrap();
+    #[test]
+    fn roundtrip_event_update() {
+        let arena = Bump::with_capacity(1024);
 
-        //assert_eq!(event, back);
+        let event = ChangeEvent {
+            op: Op::Update {
+                old: vec![in &arena;
+                    PgValue::Int4(1),
+                ],
+
+                row: vec![in &arena;
+                    PgValue::Text("hola"),
+                ],
+            },
+
+            rel: 1024,
+        };
+
+        roundtrip(event);
+    }
+
+    #[test]
+    fn roundtrip_event_delete() {
+        let arena = Bump::with_capacity(1024);
+
+        let event = ChangeEvent {
+            op: Op::Delete {
+                old: vec![in &arena;
+                    PgValue::Int4(1),
+                    PgValue::Text("HOLA")
+                ],
+            },
+
+            rel: 1024,
+        };
+
+        roundtrip(event);
+    }
+
+    #[test]
+    fn roundtrip_relation_simple() {
+        let arena = Bump::with_capacity(1024);
+
+        let relation = Relation {
+            relation_oid: todo!(),
+            name: todo!(),
+            namespace: todo!(),
+            fields: todo!(),
+            replica_id: todo!(),
+        };
+
+        roundtrip_rel(relation);
     }
 }

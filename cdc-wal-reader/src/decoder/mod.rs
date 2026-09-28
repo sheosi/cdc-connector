@@ -6,7 +6,6 @@ use thiserror::Error;
 pub mod delete;
 pub mod insert;
 pub mod relation;
-pub mod transactions;
 pub mod tuple_data;
 pub mod update;
 

@@ -153,7 +153,7 @@ impl PostgresSink {
             cdc_avro::Op::Delete { old } => {
                 let delete_stmt = self
                     .delete_stmt_cache
-                    .get(&self.client, event.rel, &self.relation_cache.table_names)
+                    .get(&self.client, event.rel, &self.relation_cache, &self.arena)
                     .await
                     .expect("Failed to generate insert statement");
 

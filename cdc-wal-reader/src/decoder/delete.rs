@@ -18,13 +18,17 @@ pub fn parse<'a>(
 ) -> Result<(ChangeEvent<'a>, &'a RelationData<'a>), DecoderError> {
     let start = Instant::now();
 
+    if data.len() < 9 {
+        return Err(DecoderError::TruncatedInput);
+    }
+
     /*let id = u32::from_be_bytes(
-        data[0..4]
+        data[1..5]
             .try_into()
             .map_err(|_| DecoderError::TruncatedInput)?,
     );*/
     let relation_oid = u32::from_be_bytes(
-        data[4..8]
+        data[5..9]
             .try_into()
             .map_err(|_| DecoderError::TruncatedInput)?,
     );
@@ -33,7 +37,7 @@ pub fn parse<'a>(
         .get(&relation_oid)
         .ok_or_else(|| DecoderError::UnknownRelation(relation_oid))?;
 
-    let (old, _) = get_old_tuple_data(&data[8..], &relation, arena)?;
+    let (old, _) = get_old_tuple_data(&data[9..], &relation, arena)?;
 
     let event = ChangeEvent {
         op: cdc_avro::Op::Delete { old },
@@ -50,17 +54,19 @@ mod test {
     use std::collections::HashMap;
 
     use bumpalo::{Bump, vec};
+    use bytes::Bytes;
     use cdc_avro::{ChangeEvent, PgValue};
 
     use crate::decoder::{
+        DecoderError,
         common::{self, get_example_rel_data, get_example_rel_data_keys},
         delete::parse,
     };
 
     #[test]
     pub fn simple_delete_key() {
-        let data = bytes::Bytes::from_static(&[
-            0, 0, 0, 1, // Operation ID
+        let data = Bytes::from_static(&[
+            b'D', 0, 0, 0, 1, // Operation ID
             0, 0, 0, 1, // Relation OID
             b'K', 0, 1, // Two columns
             // First col
@@ -89,8 +95,8 @@ mod test {
 
     #[test]
     pub fn simple_delete_object() {
-        let data = bytes::Bytes::from_static(&[
-            0, 0, 0, 1, // Operation ID
+        let data = Bytes::from_static(&[
+            b'D', 0, 0, 0, 1, // Operation ID
             0, 0, 0, 1, // Relation OID
             b'O', 0, 2, // Two columns
             // First col
@@ -118,5 +124,70 @@ mod test {
         };
 
         assert_eq!(event, Ok((event_example, &get_example_rel_data(&arena))));
+    }
+
+    #[test]
+    fn empty() {
+        let data = Bytes::from_static(&[]);
+
+        let arena = Bump::new();
+
+        let relation_map = common::get_example_rel_map(&arena);
+
+        let event = parse(&data, &relation_map, &arena);
+
+        assert_eq!(event, Err(DecoderError::TruncatedInput));
+    }
+
+    #[test]
+    fn no_operation_id() {
+        let data = Bytes::from_static(&[b'D']);
+
+        let arena = Bump::new();
+
+        let relation_map = common::get_example_rel_map(&arena);
+
+        let event = parse(&data, &relation_map, &arena);
+
+        assert_eq!(event, Err(DecoderError::TruncatedInput));
+    }
+
+    #[test]
+    fn no_relation_id() {
+        let data = Bytes::from_static(&[b'D', 0, 0, 0, 0]);
+
+        let arena = Bump::new();
+
+        let relation_map = common::get_example_rel_map(&arena);
+
+        let event = parse(&data, &relation_map, &arena);
+
+        assert_eq!(event, Err(DecoderError::TruncatedInput));
+    }
+
+    #[test]
+    fn no_tuple() {
+        let data = Bytes::from_static(&[b'D', 0, 0, 0, 0, 0, 0, 0, 1]);
+
+        let arena = Bump::new();
+
+        let relation_map = common::get_example_rel_map(&arena);
+
+        let event = parse(&data, &relation_map, &arena);
+
+        assert_eq!(event, Err(DecoderError::TruncatedInput));
+    }
+
+    #[test]
+    fn wrong_rel() {
+        let data = Bytes::from_static(&[b'D', 0, 0, 0, 0, 0, 0, 0, 0]);
+
+        let arena = Bump::new();
+
+        let relation_map = common::get_example_rel_map(&arena);
+
+        let event = parse(&data, &relation_map, &arena);
+
+        assert_eq!(event, Err(DecoderError::UnknownRelation(0)))
     }
 }

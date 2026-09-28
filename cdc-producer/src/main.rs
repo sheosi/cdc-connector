@@ -77,7 +77,7 @@ impl CdcProducer for KafkaProducer {
         &mut self,
         relation: &Relation<'a>,
     ) -> std::prelude::v1::Result<(), String> {
-        let relation_bin = relation.to_avro().map_err(|e| e.to_string())?;
+        let relation_bin = relation.into_avro().map_err(|e| e.to_string())?;
 
         let rel_topic = format!("{}.relations", self.topic);
         let as_bytes = relation.relation_oid.to_be_bytes();

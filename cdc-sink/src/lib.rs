@@ -95,7 +95,7 @@ impl KafkaClient {
         &self,
         arena: &'a Bump,
     ) -> Result<HashMap<u32, Relation<'a>>, ()> {
-        let rel_topic = format!("{}.relations", self.topic);
+        let rel_topic = bumpalo::format!(in arena, "{}.relations", self.topic);
         self.consumer.subscribe(&[&rel_topic]).map_err(|_| ())?;
 
         let mut relations = HashMap::new();

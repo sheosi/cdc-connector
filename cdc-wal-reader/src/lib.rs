@@ -100,61 +100,67 @@ pub async fn start_wal_input<P: Producer>(
 
     while let Some(ev) = client.recv().await? {
         match ev {
-            ReplicationEvent::XLogData { wal_end, data, .. } => match data[0] {
-                b'R' => {
-                    if let Ok(relation) = decoder::relation::RelationData::parse(data, &arena) {
-                        println!("{:?}", &relation);
+            ReplicationEvent::XLogData { wal_end, data, .. } => {
+                if data.len() == 0 {
+                    eprintln!("Data empty!")
+                }
 
-                        if let Err(e) = producer.on_relation(&relation.inner).await {
-                            eprintln!("Failed to send relation: {}", e);
+                match data[0] {
+                    b'R' => {
+                        if let Ok(relation) = decoder::relation::RelationData::parse(data, &arena) {
+                            println!("{:?}", &relation);
+
+                            if let Err(e) = producer.on_relation(&relation.inner).await {
+                                eprintln!("Failed to send relation: {}", e);
+                            }
+
+                            relation_map.insert(relation.inner.relation_oid, relation);
                         }
+                    }
+                    b'I' => {
+                        println!("XLogData wal_end={} bytes={:?}", wal_end, &data);
 
-                        relation_map.insert(relation.inner.relation_oid, relation);
+                        // If not in a transaction because it was aborted, skip treating this
+                        if currently_in_transaction {
+                            send_to_producer(
+                                decoder::insert::parse(&data, &relation_map, &arena),
+                                &producer,
+                                &mut currently_in_transaction,
+                            )
+                            .await;
+                        }
+                    }
+                    b'D' => {
+                        println!("Remove bytes={:?}", &data);
+
+                        // If not in a transaction because it was aborted, skip treating this
+                        if currently_in_transaction {
+                            send_to_producer(
+                                decoder::delete::parse(&data, &relation_map, &arena),
+                                &producer,
+                                &mut currently_in_transaction,
+                            )
+                            .await;
+                        }
+                    }
+                    b'U' => {
+                        println!("Delete bytes={:?}", &data);
+
+                        // If not in a transaction because it was aborted, skip treating this
+                        if currently_in_transaction {
+                            send_to_producer(
+                                decoder::update::parse(&data, &relation_map, &arena),
+                                &producer,
+                                &mut currently_in_transaction,
+                            )
+                            .await;
+                        }
+                    }
+                    _ => {
+                        println!("XLogData wal_end={} bytes={:?}", wal_end, data);
                     }
                 }
-                b'I' => {
-                    println!("XLogData wal_end={} bytes={:?}", wal_end, &data);
-
-                    // If not in a transaction because it was aborted, skip treating this
-                    if currently_in_transaction {
-                        send_to_producer(
-                            decoder::insert::parse(&data, &relation_map, &arena),
-                            &producer,
-                            &mut currently_in_transaction,
-                        )
-                        .await;
-                    }
-                }
-                b'D' => {
-                    println!("Remove bytes={:?}", &data);
-
-                    // If not in a transaction because it was aborted, skip treating this
-                    if currently_in_transaction {
-                        send_to_producer(
-                            decoder::delete::parse(&data, &relation_map, &arena),
-                            &producer,
-                            &mut currently_in_transaction,
-                        )
-                        .await;
-                    }
-                }
-                b'U' => {
-                    println!("Delete bytes={:?}", &data);
-
-                    // If not in a transaction because it was aborted, skip treating this
-                    if currently_in_transaction {
-                        send_to_producer(
-                            decoder::update::parse(&data, &relation_map, &arena),
-                            &producer,
-                            &mut currently_in_transaction,
-                        )
-                        .await;
-                    }
-                }
-                _ => {
-                    println!("XLogData wal_end={} bytes={:?}", wal_end, data);
-                }
-            },
+            }
             ReplicationEvent::Begin {
                 final_lsn: _,
                 xid: _,

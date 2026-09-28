@@ -47,15 +47,31 @@ impl DeleteStatementCache {
         &mut self,
         client: &Client,
         relation: u32,
-        table_names: &TableNames,
+        relation_cache: &RelationCache,
+        arena: &Bump,
     ) -> Result<DeleteStatement, tokio_postgres::Error> {
         use std::collections::hash_map::Entry;
 
         match self.0.entry(relation) {
             Entry::Occupied(e) => Ok(e.get().clone()),
-            Entry::Vacant(e) => Ok(e
-                .insert(DeleteStatement::new(client, table_names.get(relation).unwrap()).await?)
-                .clone()),
+            Entry::Vacant(e) => {
+                let keys = relation_cache
+                    .keys
+                    .get(&relation)
+                    .unwrap()
+                    .iter()
+                    .map(|s| s.as_str())
+                    .collect_in::<bumpalo::collections::Vec<'_, _>>(&arena);
+                Ok(e.insert(
+                    DeleteStatement::new(
+                        client,
+                        relation_cache.table_names.get(relation).unwrap(),
+                        keys.as_slice(),
+                    )
+                    .await?,
+                )
+                .clone())
+            }
         }
     }
 }
@@ -168,7 +184,8 @@ impl UpsertStatement {
 
     fn gen_str(table: &str, rows: &[&str], keys: &[&str]) -> String {
         let mut stmt_str = InsertStatement::gen_str(table, rows);
-        stmt_str.push_str("ON CONFLICT (");
+        stmt_str.reserve(14 + rows.len() * 15);
+        stmt_str.push_str(" ON CONFLICT (");
 
         for (i, r) in keys.iter().enumerate() {
             stmt_str.push_str(r); // TODO SET PK
@@ -178,16 +195,24 @@ impl UpsertStatement {
             }
         }
 
-        stmt_str.push_str(") DO UPDATE SET ");
+        if rows.len() != keys.len() {
+            stmt_str.push_str(") DO UPDATE SET ");
 
-        for (i, c) in rows.iter().enumerate() {
-            stmt_str.push_str(c);
-            stmt_str.push_str(" = EXCLUDED.");
-            stmt_str.push_str(c);
+            for (i, c) in rows.iter().enumerate() {
+                if keys.contains(c) {
+                    continue;
+                }
 
-            if i < rows.len() - 1 {
-                stmt_str.push_str(",");
+                stmt_str.push_str(c);
+                stmt_str.push_str(" = EXCLUDED.");
+                stmt_str.push_str(c);
+
+                if i < rows.len() - 1 {
+                    stmt_str.push_str(",");
+                }
             }
+        } else {
+            stmt_str.push_str(") DO NOTHING")
         }
 
         stmt_str
@@ -203,16 +228,27 @@ impl DeleteStatement {
     pub async fn new(
         client: &tokio_postgres::Client,
         table: &str,
+        keys: &[&str],
     ) -> Result<Self, tokio_postgres::Error> {
-        let stmt = client.prepare(&DeleteStatement::gen_str(table)).await?;
+        let stmt = client
+            .prepare(&DeleteStatement::gen_str(table, keys))
+            .await?;
 
         Ok(DeleteStatement { stmt })
     }
 
-    fn gen_str(table: &str) -> String {
+    fn gen_str(table: &str, keys: &[&str]) -> String {
         let mut stmt_str = "DELETE FROM ".to_string();
         stmt_str.push_str(table);
-        stmt_str.push_str(" WHERE id = $1");
+        stmt_str.push_str(" WHERE ");
+
+        for (i, key) in keys.iter().enumerate() {
+            if i < keys.len() - 1 {
+                write!(&mut stmt_str, "{} = ${} AND ", key, i + 1).expect("");
+            } else {
+                write!(&mut stmt_str, "{} = ${}", key, i + 1).expect("");
+            }
+        }
 
         stmt_str
     }
@@ -221,7 +257,7 @@ impl DeleteStatement {
 #[cfg(test)]
 mod test {
 
-    use crate::statements::{DeleteStatement, InsertStatement};
+    use crate::statements::{DeleteStatement, InsertStatement, UpsertStatement};
 
     #[test]
     fn simple_insert_str() {
@@ -232,9 +268,33 @@ mod test {
     }
 
     #[test]
+    fn simple_upsert_str() {
+        let upsert_str = UpsertStatement::gen_str("users", &["id", "name", "email"], &["id"]);
+        let res_str = "INSERT INTO users (id,name,email) VALUES ($1,$2,$3) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name,email = EXCLUDED.email";
+
+        assert_eq!(upsert_str, res_str);
+    }
+
+    #[test]
+    fn upsert_no_values() {
+        let upsert_str = UpsertStatement::gen_str("users", &["id"], &["id"]);
+        let res_str = "INSERT INTO users (id) VALUES ($1) ON CONFLICT (id) DO NOTHING";
+
+        assert_eq!(upsert_str, res_str);
+    }
+
+    #[test]
     fn simple_delete_str() {
-        let delete_str = DeleteStatement::gen_str("users");
+        let delete_str = DeleteStatement::gen_str("users", &["id"]);
         let res_str = "DELETE FROM users WHERE id = $1";
+
+        assert_eq!(delete_str, res_str);
+    }
+
+    #[test]
+    fn multiple_delete_str() {
+        let delete_str = DeleteStatement::gen_str("users", &["id", "name"]);
+        let res_str = "DELETE FROM users WHERE id = $1 AND name = $2";
 
         assert_eq!(delete_str, res_str);
     }

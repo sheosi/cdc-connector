@@ -20,6 +20,10 @@ pub fn get_old_tuple_data<'a>(
     relation: &'a RelationData,
     arena: &'a Bump,
 ) -> Result<(Vec<'a, PgValue<'a>>, usize), DecoderError> {
+    if data.len() == 0 {
+        return Err(DecoderError::TruncatedInput);
+    }
+
     match data[0] {
         b'K' => {
             if relation.inner.replica_id != ReplicaKind::Keys {
@@ -43,9 +47,13 @@ pub fn get_old_tuple_data<'a>(
 
 pub fn get_new_tuple_data<'a>(
     data: &'a [u8],
-    arena: &'a Bump,
     fields: &'a [Field],
+    arena: &'a Bump,
 ) -> Result<bumpalo::collections::Vec<'a, PgValue<'a>>, DecoderError> {
+    if data.len() == 0 {
+        return Err(DecoderError::TruncatedInput);
+    }
+
     if data[0] != b'N' {
         return Err(DecoderError::WrongNewTupleKey(data[0]));
     }
@@ -155,7 +163,7 @@ pub fn get_example_rel_map_keys(
 }
 
 #[cfg(test)]
-pub fn get_example_rel_keys(arena: &Bump) -> Relation {
+pub fn get_example_rel_keys(arena: &Bump) -> Relation<'_> {
     Relation {
         relation_oid: 1,
         name: "users".to_string(),
@@ -177,7 +185,7 @@ pub fn get_example_rel_keys(arena: &Bump) -> Relation {
 }
 
 #[cfg(test)]
-pub fn get_example_rel_data_keys(arena: &Bump) -> RelationData {
+pub fn get_example_rel_data_keys(arena: &Bump) -> RelationData<'_> {
     RelationData {
         inner: get_example_rel_keys(arena),
         key_fields: bumpalo::vec![in arena;
@@ -205,7 +213,7 @@ mod test {
     use cdc_avro::PgValue;
 
     use crate::decoder::common::{
-        col_byte_id, col_text_name, get_example_rel, get_example_rel_data,
+        DecoderError, col_byte_id, col_text_name, get_example_rel, get_example_rel_data,
         get_example_rel_data_keys, get_new_tuple_data, get_old_tuple_data,
     };
 
@@ -280,7 +288,7 @@ mod test {
 
         let example_rel = get_example_rel_data(&arena);
 
-        let new_tuple = get_new_tuple_data(&data, &arena, &example_rel.inner.fields);
+        let new_tuple = get_new_tuple_data(&data, &example_rel.inner.fields, &arena);
         let new_tuple_manual = vec![
         in &arena;
             col_byte_id(),
@@ -288,5 +296,83 @@ mod test {
         ];
 
         assert_eq!(new_tuple, Ok(new_tuple_manual));
+    }
+
+    #[test]
+    fn old_tuple_no_size() {
+        let data = [b'O'];
+
+        let arena = Bump::new();
+
+        let example_rel = get_example_rel_data(&arena);
+
+        let new_tuple = get_old_tuple_data(&data, &example_rel, &arena);
+
+        assert_eq!(new_tuple, Err(DecoderError::TruncatedInput));
+    }
+
+    #[test]
+    fn key_no_size() {
+        let data = [b'K'];
+
+        let arena = Bump::new();
+
+        let example_rel = get_example_rel_data_keys(&arena);
+
+        let new_tuple = get_old_tuple_data(&data, &example_rel, &arena);
+
+        assert_eq!(new_tuple, Err(DecoderError::TruncatedInput));
+    }
+
+    #[test]
+    fn empty_old() {
+        let data = [];
+
+        let arena = Bump::new();
+
+        let example_rel = get_example_rel_data(&arena);
+
+        let new_tuple = get_old_tuple_data(&data, &example_rel, &arena);
+
+        assert_eq!(new_tuple, Err(DecoderError::TruncatedInput));
+    }
+
+    #[test]
+    fn empty_new() {
+        let data = [];
+
+        let arena = Bump::new();
+
+        let example_rel = get_example_rel_data(&arena);
+
+        let new_tuple = get_new_tuple_data(&data, &example_rel.inner.fields, &arena);
+
+        assert_eq!(new_tuple, Err(DecoderError::TruncatedInput));
+    }
+
+    #[test]
+    fn wrong_old_tuple_key() {
+        let data = [b'C'];
+
+        let arena = Bump::new();
+
+        let example_rel = get_example_rel_data(&arena);
+
+        let new_tuple = get_old_tuple_data(&data, &example_rel, &arena);
+
+        assert_eq!(new_tuple, Err(DecoderError::WrongOldTupleKey(b'C')));
+    }
+
+    #[test]
+    fn wrong_new_tuple_key() {
+        let data = [b'C'];
+
+        let arena = Bump::new();
+
+        let example_rel = get_example_rel_data(&arena);
+
+        let new_tuple = get_new_tuple_data(&data, &example_rel.inner.fields, &arena);
+
+        assert_eq!(new_tuple, Err(DecoderError::WrongNewTupleKey(b'C')));
     }
 }
