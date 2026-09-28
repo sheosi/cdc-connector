@@ -1,4 +1,4 @@
-use bumpalo::{Bump, collections::CollectIn};
+use bumpalo::Bump;
 use cdc_sink::TableNames;
 use std::collections::HashMap;
 use std::fmt::Write;
@@ -24,13 +24,12 @@ impl InsertStatementCache {
 
         match self.0.entry(rel) {
             Entry::Occupied(e) => Ok(e.get().clone()),
-            Entry::Vacant(e) => {
-                let rows: Vec<&str> = rows_table[&rel].iter().map(|s| s.as_str()).collect();
-                Ok(e.insert(
-                    InsertStatement::new(client, table_names.get(rel).unwrap(), &rows).await?,
+            Entry::Vacant(e) => Ok(e
+                .insert(
+                    InsertStatement::new(client, table_names.get(rel).unwrap(), &rows_table[&rel])
+                        .await?,
                 )
-                .clone())
-            }
+                .clone()),
         }
     }
 }
@@ -55,13 +54,7 @@ impl DeleteStatementCache {
         match self.0.entry(relation) {
             Entry::Occupied(e) => Ok(e.get().clone()),
             Entry::Vacant(e) => {
-                let keys = relation_cache
-                    .keys
-                    .get(&relation)
-                    .unwrap()
-                    .iter()
-                    .map(|s| s.as_str())
-                    .collect_in::<bumpalo::collections::Vec<'_, _>>(&arena);
+                let keys = relation_cache.keys.get(&relation).unwrap();
                 Ok(e.insert(
                     DeleteStatement::new(
                         client,
@@ -85,20 +78,20 @@ impl InsertStatement {
     pub async fn new(
         client: &tokio_postgres::Client,
         table: &str,
-        rows: &[&str],
+        rows: &[String],
     ) -> Result<Self, tokio_postgres::Error> {
         let stmt = client.prepare(&Self::gen_str(table, rows)).await?;
 
         Ok(InsertStatement { stmt })
     }
 
-    fn gen_str(table: &str, rows: &[&str]) -> String {
+    fn gen_str(table: &str, rows: &[String]) -> String {
         let mut stmt_str = String::with_capacity(25 + table.len() + rows.len() * 10);
         stmt_str.push_str("INSERT INTO ");
         stmt_str.push_str(table);
         stmt_str.push_str(" (");
         for (i, r) in rows.iter().enumerate() {
-            stmt_str.push_str(*r);
+            stmt_str.push_str(&r);
 
             if i < rows.len() - 1 {
                 stmt_str.push(',');
@@ -131,36 +124,24 @@ impl UpsertStatementCache {
         &mut self,
         client: &Client,
         rel: u32,
-        arena: &Bump,
         relation_cache: &RelationCache,
+        arena: &Bump,
     ) -> Result<UpsertStatement, tokio_postgres::Error> {
-        use bumpalo::collections::Vec;
         use std::collections::hash_map::Entry;
 
         match self.0.entry(rel) {
             Entry::Occupied(e) => Ok(e.get().clone()),
-            Entry::Vacant(e) => {
-                let rows: Vec<'_, &str> = relation_cache.fields[&rel]
-                    .iter()
-                    .map(|s| s.as_str())
-                    .collect_in(arena);
-
-                let keys: Vec<'_, &str> = relation_cache.keys[&rel]
-                    .iter()
-                    .map(|s| s.as_str())
-                    .collect_in(arena);
-
-                Ok(e.insert(
+            Entry::Vacant(e) => Ok(e
+                .insert(
                     UpsertStatement::new(
                         client,
                         relation_cache.table_names.get(rel).unwrap(),
-                        &rows,
-                        &keys,
+                        &relation_cache.fields[&rel],
+                        &relation_cache.keys[&rel],
                     )
                     .await?,
                 )
-                .clone())
-            }
+                .clone()),
         }
     }
 }
@@ -174,15 +155,15 @@ impl UpsertStatement {
     pub async fn new(
         client: &tokio_postgres::Client,
         table: &str,
-        rows: &[&str],
-        keys: &[&str],
+        rows: &[String],
+        keys: &[String],
     ) -> Result<Self, tokio_postgres::Error> {
         let stmt = client.prepare(&Self::gen_str(table, rows, keys)).await?;
 
         Ok(UpsertStatement { stmt })
     }
 
-    fn gen_str(table: &str, rows: &[&str], keys: &[&str]) -> String {
+    fn gen_str(table: &str, rows: &[String], keys: &[String]) -> String {
         let mut stmt_str = InsertStatement::gen_str(table, rows);
         stmt_str.reserve(14 + rows.len() * 15);
         stmt_str.push_str(" ON CONFLICT (");
@@ -228,7 +209,7 @@ impl DeleteStatement {
     pub async fn new(
         client: &tokio_postgres::Client,
         table: &str,
-        keys: &[&str],
+        keys: &[String],
     ) -> Result<Self, tokio_postgres::Error> {
         let stmt = client
             .prepare(&DeleteStatement::gen_str(table, keys))
@@ -237,7 +218,7 @@ impl DeleteStatement {
         Ok(DeleteStatement { stmt })
     }
 
-    fn gen_str(table: &str, keys: &[&str]) -> String {
+    fn gen_str(table: &str, keys: &[String]) -> String {
         let mut stmt_str = "DELETE FROM ".to_string();
         stmt_str.push_str(table);
         stmt_str.push_str(" WHERE ");
@@ -261,7 +242,10 @@ mod test {
 
     #[test]
     fn simple_insert_str() {
-        let insert_str = InsertStatement::gen_str("users", &["id", "name", "email"]);
+        let insert_str = InsertStatement::gen_str(
+            "users",
+            &["id".to_string(), "name".to_string(), "email".to_string()],
+        );
         let res_str = "INSERT INTO users (id,name,email) VALUES ($1,$2,$3)";
 
         assert_eq!(insert_str, res_str);
@@ -269,7 +253,11 @@ mod test {
 
     #[test]
     fn simple_upsert_str() {
-        let upsert_str = UpsertStatement::gen_str("users", &["id", "name", "email"], &["id"]);
+        let upsert_str = UpsertStatement::gen_str(
+            "users",
+            &["id".to_string(), "name".to_string(), "email".to_string()],
+            &["id".to_string()],
+        );
         let res_str = "INSERT INTO users (id,name,email) VALUES ($1,$2,$3) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name,email = EXCLUDED.email";
 
         assert_eq!(upsert_str, res_str);
@@ -277,7 +265,8 @@ mod test {
 
     #[test]
     fn upsert_no_values() {
-        let upsert_str = UpsertStatement::gen_str("users", &["id"], &["id"]);
+        let upsert_str =
+            UpsertStatement::gen_str("users", &["id".to_string()], &["id".to_string()]);
         let res_str = "INSERT INTO users (id) VALUES ($1) ON CONFLICT (id) DO NOTHING";
 
         assert_eq!(upsert_str, res_str);
@@ -285,7 +274,7 @@ mod test {
 
     #[test]
     fn simple_delete_str() {
-        let delete_str = DeleteStatement::gen_str("users", &["id"]);
+        let delete_str = DeleteStatement::gen_str("users", &["id".to_string()]);
         let res_str = "DELETE FROM users WHERE id = $1";
 
         assert_eq!(delete_str, res_str);
@@ -293,7 +282,7 @@ mod test {
 
     #[test]
     fn multiple_delete_str() {
-        let delete_str = DeleteStatement::gen_str("users", &["id", "name"]);
+        let delete_str = DeleteStatement::gen_str("users", &["id".to_string(), "name".to_string()]);
         let res_str = "DELETE FROM users WHERE id = $1 AND name = $2";
 
         assert_eq!(delete_str, res_str);

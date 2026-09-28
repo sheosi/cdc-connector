@@ -138,7 +138,7 @@ impl PostgresSink {
             cdc_avro::Op::Update { old: _, row } => {
                 let update_stmt = self
                     .upsert_stmt_cache
-                    .get(&self.client, event.rel, &self.arena, &self.relation_cache)
+                    .get(&self.client, event.rel, &self.relation_cache, &self.arena)
                     .await
                     .unwrap();
 
