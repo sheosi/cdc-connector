@@ -138,13 +138,16 @@ async fn main() {
 
     cdc_sink::init_metrics(config.metrics);
 
-    let arena = &Bump::with_capacity(2048);
+    let mut arena = Bump::with_capacity(2048);
+    let relations_arena = Bump::with_capacity(4096);
 
     let kafka = config.kafka.connect().await;
     let relations = kafka
-        .load_relations(arena)
+        .load_relations(&arena, &relations_arena)
         .await
         .expect("Failed to load relations");
+
+    arena.reset();
 
     kafka
         .consume_from_kafka(FelderaConnector::new(

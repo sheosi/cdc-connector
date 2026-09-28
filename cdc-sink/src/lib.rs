@@ -93,7 +93,8 @@ pub struct KafkaClient {
 impl KafkaClient {
     pub async fn load_relations<'a>(
         &self,
-        arena: &'a Bump,
+        arena: &Bump,
+        _rels_arena: &'a Bump,
     ) -> Result<HashMap<u32, Relation<'a>>, ()> {
         let rel_topic = bumpalo::format!(in arena, "{}.relations", self.topic);
         self.consumer.subscribe(&[&rel_topic]).map_err(|_| ())?;
@@ -112,6 +113,7 @@ impl KafkaClient {
                 Ok(None) | Err(_) => break,
             }
         }
+
         Ok(relations)
     }
 

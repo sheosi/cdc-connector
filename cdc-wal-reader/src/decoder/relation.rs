@@ -174,10 +174,14 @@ fn kind_from_oid_mod(t_oid: u32, t_mod: u32) -> Result<FieldKind, DecoderError> 
 #[cfg(test)]
 mod test {
     use bumpalo::{Bump, vec};
+    use bytes::Bytes;
 
-    use crate::decoder::relation::{
-        Field, FieldKind, FieldParseResult, KeyField, Relation, RelationData, ReplicaKind,
-        parse_field,
+    use crate::decoder::{
+        DecoderError,
+        relation::{
+            Field, FieldKind, FieldParseResult, KeyField, Relation, RelationData, ReplicaKind,
+            parse_field,
+        },
     };
 
     fn field_id() -> Field {
@@ -197,7 +201,7 @@ mod test {
 
     #[test]
     fn simple_relation() {
-        let data = bytes::Bytes::from_static(&[
+        let data = Bytes::from_static(&[
             b'R', // Relation
             0, 0, 0, 1, // Relation OID
             b'p', b'u', b'b', b'l', b'i', b'c', 0, // Namespace
@@ -241,4 +245,18 @@ mod test {
 
         assert_eq!(field, Ok(FieldParseResult::Physical((field_id(), 12))));
     }
+
+    #[test]
+    fn empty() {
+        let data = Bytes::from_static(&[b'R']);
+
+        let arena = Bump::new();
+
+        let relation = RelationData::parse(data, &arena);
+
+        assert_eq!(relation, Err(DecoderError::TruncatedInput));
+    }
+
+    #[test]
+    fn no_relation() {}
 }

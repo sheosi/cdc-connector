@@ -26,13 +26,16 @@ async fn main() {
 
     cdc_sink::init_metrics(config.metrics);
 
-    let arena = Bump::with_capacity(2048);
+    let mut arena = Bump::with_capacity(2048);
+    let relations_arena = Bump::with_capacity(4096);
 
     let kafka = config.kafka.connect().await;
     let relations = kafka
-        .load_relations(&arena)
+        .load_relations(&arena, &relations_arena)
         .await
         .expect("Failed to load relations");
+
+    arena.reset();
 
     kafka
         .consume_from_kafka(
@@ -132,7 +135,7 @@ impl PostgresSink {
 
                 self.arena.reset();
             }
-            cdc_avro::Op::Update { old, row } => {
+            cdc_avro::Op::Update { old: _, row } => {
                 let update_stmt = self
                     .upsert_stmt_cache
                     .get(&self.client, event.rel, &self.arena, &self.relation_cache)

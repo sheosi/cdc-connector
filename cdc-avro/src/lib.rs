@@ -63,7 +63,7 @@ impl<'a> ChangeEvent<'a> {
     }
 }
 
-const CHANGE_EVENT_SCHEMA_STR: &str = r#"{"type":"record","name":"ChangeEvent","fields":[{"name":"op","type":[{"type":"record","name":"Insert","fields":[{"name":"row","type":{"type":"array","items":[{"type":"record","name":"Text","fields":[{"name":"Text","type":"string"}]},{"type":"record","name":"Int4","fields":[{"name":"Int4","type":"int"}]}]}}]},{"type":"record","name":"Update","fields":[{"name":"old_k","type":"int"},{"name":"old","type":{"type":"array","items":["Text","Int4"]}},{"name":"row","type":{"type":"array","items":["Text","Int4"]}}]},{"type":"record","name":"Delete","fields":[{"name":"old_k","type":"int"},{"name":"old","type":{"type":"array","items":["Text","Int4"]}}]}]},{"name":"rel","type":"int"}]}"#;
+const CHANGE_EVENT_SCHEMA_STR: &str = r#"{"type":"record","name":"ChangeEvent","fields":[{"name":"op","type":[{"type":"record","name":"Insert","fields":[{"name":"row","type":{"type":"array","items":[{"type":"record","name":"Text","fields":[{"name":"Text","type":"string"}]},{"type":"record","name":"Int4","fields":[{"name":"Int4","type":"int"}]}]}}]},{"type":"record","name":"Update","fields":[{"name":"old","type":{"type":"array","items":["Text","Int4"]}},{"name":"row","type":{"type":"array","items":["Text","Int4"]}}]},{"type":"record","name":"Delete","fields":[{"name":"old","type":{"type":"array","items":["Text","Int4"]}}]}]},{"name":"rel","type":"int"}]}"#;
 
 const RELATION_SCHEMA_STR: &str = r#"{"type":"record","name":"Relation","fields":[{"name":"oid","type":"int"},{"name":"namespace","type":"string"},{"name":"relname","type":"string"},{"name":"fields","type":{"type":"array","items":{"type":"record","name":"Field","fields":[{"name":"name","type":"string"},{"name":"kind","type":"string"},{"name":"is_key","type":"boolean"}]}}}]}"#;
 
@@ -200,6 +200,14 @@ mod tests {
         assert_eq!(relation, back);
     }
 
+    fn text_field(field: &str) -> Field {
+        Field {
+            is_key: true,
+            name: field.to_string(),
+            kind: FieldKind::Text,
+        }
+    }
+
     #[test]
     fn roundtrip_event_insert() {
         let arena = Bump::with_capacity(1024);
@@ -257,14 +265,14 @@ mod tests {
 
     #[test]
     fn roundtrip_relation_simple() {
-        let arena = Bump::with_capacity(1024);
+        let arena = Bump::new();
 
         let relation = Relation {
-            relation_oid: todo!(),
-            name: todo!(),
-            namespace: todo!(),
-            fields: todo!(),
-            replica_id: todo!(),
+            relation_oid: 1,
+            name: "Simple".to_string(),
+            namespace: "Public".to_string(),
+            fields: vec![in &arena; text_field("Hola")],
+            replica_id: ReplicaKind::Row,
         };
 
         roundtrip_rel(relation);
