@@ -40,7 +40,8 @@ pub fn parse<'a>(
         rel: relation_oid,
     };
 
-    metrics::gauge!("cdc_tuple_parse_duration_seconds", "op"=>"delete").increment(1);
+    metrics::histogram!("cdc_tuple_parse_duration_seconds", "op"=>"delete")
+        .record(start.elapsed().as_secs_f64());
 
     Ok((event, relation))
 }
