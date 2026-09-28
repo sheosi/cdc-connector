@@ -17,11 +17,7 @@ pub struct RelationData<'a> {
 
 impl<'a> RelationData<'a> {
     pub fn parse(data: Bytes, arena: &'a Bump) -> Result<RelationData<'a>, DecoderError> {
-        let relation_oid = u32::from_be_bytes(
-            data[1..5]
-                .try_into()
-                .map_err(|_| DecoderError::TruncatedInput)?,
-        );
+        let relation_oid = u32::from_be_bytes(data[1..5].try_into().expect(""));
         let namespace = CStr::from_bytes_until_nul(&data[5..])
             .map_err(|_| DecoderError::TruncatedInput)?
             .to_str()?
@@ -42,7 +38,7 @@ impl<'a> RelationData<'a> {
         let cols = u16::from_be_bytes(
             data[replica_id_pos + 1..replica_id_pos + 3]
                 .try_into()
-                .map_err(|_| DecoderError::TruncatedInput)?,
+                .expect(""),
         );
 
         let mut col_start_id = replica_id_pos + 3;
@@ -137,17 +133,9 @@ fn parse_field(data: &[u8]) -> Result<FieldParseResult, DecoderError> {
 
     let after_name = 1 + name.len() + 1;
 
-    let t_oid = u32::from_be_bytes(
-        data[after_name..after_name + 4]
-            .try_into()
-            .map_err(|_| DecoderError::TruncatedInput)?,
-    );
+    let t_oid = u32::from_be_bytes(data[after_name..after_name + 4].try_into().expect(""));
 
-    let t_mod = u32::from_be_bytes(
-        data[after_name + 4..after_name + 8]
-            .try_into()
-            .map_err(|_| DecoderError::TruncatedInput)?,
-    );
+    let t_mod = u32::from_be_bytes(data[after_name + 4..after_name + 8].try_into().expect(""));
 
     Ok(FieldParseResult::Physical((
         Field {

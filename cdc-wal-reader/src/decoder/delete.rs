@@ -25,13 +25,9 @@ pub fn parse<'a>(
     /*let id = u32::from_be_bytes(
         data[1..5]
             .try_into()
-            .map_err(|_| DecoderError::TruncatedInput)?,
+            .expect(""),
     );*/
-    let relation_oid = u32::from_be_bytes(
-        data[5..9]
-            .try_into()
-            .map_err(|_| DecoderError::TruncatedInput)?,
-    );
+    let relation_oid = u32::from_be_bytes(data[5..9].try_into().expect(""));
 
     let relation = relation_map
         .get(&relation_oid)

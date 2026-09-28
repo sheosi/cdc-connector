@@ -32,11 +32,7 @@ pub fn parse<'a, F: FieldAccess>(
     }
 
     // Network byte order is be
-    let n_cols = u16::from_be_bytes(
-        data[0..2]
-            .try_into()
-            .map_err(|_| DecoderError::TruncatedInput)?,
-    );
+    let n_cols = u16::from_be_bytes(data[0..2].try_into().expect(""));
 
     match n_cols {
         1 => num_cols::<1, F>(data, fields, arena),
@@ -89,11 +85,7 @@ pub fn parse_keys<'a, F: FieldAccess>(
     }
 
     // Network byte order is be
-    let n_cols = u16::from_be_bytes(
-        data[0..2]
-            .try_into()
-            .map_err(|_| DecoderError::TruncatedInput)?,
-    );
+    let n_cols = u16::from_be_bytes(data[0..2].try_into().expect(""));
 
     match n_cols {
         1 => num_cols::<1, F>(data, fields, arena),
@@ -136,8 +128,8 @@ fn parse_value<'a, F: FieldAccess>(
             }
 
             // Network endianness (always big endian). Length is guaranteed by the
-            // `data.len() < 5` check above, so unwrap is safe.
-            let l = u32::from_be_bytes(data[1..5].try_into().unwrap()) as usize;
+            // `data.len() < 5` check above.
+            let l = u32::from_be_bytes(data[1..5].try_into().expect("")) as usize;
 
             if data.len() < 5 + l {
                 return Err(DecoderError::TruncatedInput);
@@ -153,11 +145,7 @@ fn parse_value<'a, F: FieldAccess>(
             }
 
             // Length of the binary data
-            let l = u32::from_be_bytes(
-                data[1..5]
-                    .try_into()
-                    .map_err(|_| DecoderError::TruncatedInput)?,
-            ) as usize;
+            let l = u32::from_be_bytes(data[1..5].try_into().expect("")) as usize;
 
             let final_l = 5 + l;
 
@@ -172,7 +160,7 @@ fn parse_value<'a, F: FieldAccess>(
                     }
 
                     // Length is guaranteed by the `data.len() < 9` check above.
-                    PgValue::Int4(u32::from_be_bytes(data[5..9].try_into().unwrap()))
+                    PgValue::Int4(u32::from_be_bytes(data[5..9].try_into().expect("")))
                 }
                 FieldKind::Text => todo!(),
             };

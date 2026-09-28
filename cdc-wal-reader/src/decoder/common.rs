@@ -81,7 +81,7 @@ fn find_null_word(data: &[u8]) -> Option<usize> {
 
     // body: 8 bytes at a time
     while i + 8 <= len {
-        let word = u64::from_ne_bytes(data[i..i + 8].try_into().unwrap());
+        let word = u64::from_ne_bytes(data[i..i + 8].try_into().expect(""));
         // has-zero-byte algorithm
         let mask = word.wrapping_sub(0x0101010101010101) & !word & 0x8080808080808080;
         if mask != 0 {
