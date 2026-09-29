@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use ahash::RandomState;
 use bumpalo::Bump;
-use cdc_avro::arena::{ChangeEvent, Relation};
+use cdc_avro::{Relation, arena::ChangeEvent};
 use pgwire_replication::{Lsn, ReplicationClient, ReplicationEvent};
 
 pub use pgwire_replication::ReplicationConfig;
@@ -15,7 +15,7 @@ use crate::decoder::{DecoderError, relation::RelationData};
 pub mod decoder;
 
 async fn send_to_producer<'a, P>(
-    event_res: Result<(ChangeEvent<'a>, &'a RelationData<'a>), DecoderError>,
+    event_res: Result<(ChangeEvent<'a>, &RelationData), DecoderError>,
     producer: &P,
     currently_in_transaction: &mut bool,
 ) where
@@ -30,7 +30,7 @@ async fn send_to_producer<'a, P>(
                 Op::Delete { old: _ } => "delete",
             };
 
-            metrics::counter!("cdc_events_produced_total", "op"=> kind, "table" =>relation.inner.name.clone())
+            metrics::counter!("cdc_events_produced_total", "op"=> kind, "table" =>relation.inner.name.to_string())
                 .increment(1);
 
             if let Err(e) = producer.send(&relation.inner, event).await {
@@ -108,7 +108,7 @@ pub async fn start_wal_input<P: Producer>(
 
                 match data[0] {
                     b'R' => {
-                        if let Ok(relation) = decoder::relation::RelationData::parse(data, &arena) {
+                        if let Ok(relation) = RelationData::parse(data) {
                             println!("{:?}", &relation);
 
                             if let Err(e) = producer.on_relation(&relation.inner).await {
@@ -283,13 +283,13 @@ pub trait Producer: Send {
     fn start_transaction(&self) -> impl std::future::Future<Output = Result<(), String>>;
     fn send<'a>(
         &self,
-        relation: &Relation<'a>,
+        relation: &Relation,
         event: ChangeEvent<'a>,
     ) -> impl std::future::Future<Output = Result<(), String>>;
 
-    fn on_relation<'a>(
+    fn on_relation(
         &mut self,
-        relation: &Relation<'a>,
+        relation: &Relation,
     ) -> impl std::future::Future<Output = Result<(), String>>;
 
     fn commit_transaction(&self, lsn: u64)

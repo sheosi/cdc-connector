@@ -8,12 +8,11 @@ use crate::decoder::{
     relation::RelationData,
     tuple_data,
 };
-use simdutf8::basic::from_utf8 as simd_from_utf8;
 
 #[cfg(test)]
 use crate::decoder::relation::KeyField;
 #[cfg(test)]
-use cdc_avro::{FieldKind, arena::Relation};
+use cdc_avro::{FieldKind, Relation};
 
 pub fn get_old_tuple_data<'a>(
     data: &'a [u8],
@@ -62,51 +61,6 @@ pub fn get_new_tuple_data<'a>(
     Ok(tuple)
 }
 
-pub fn parse_str_long(data: &[u8]) -> Option<&str> {
-    let nul = memchr::memchr(0, data).unwrap();
-    simd_from_utf8(&data[..nul]).ok()
-}
-
-fn find_null_word(data: &[u8]) -> Option<usize> {
-    let len = data.len();
-    let mut i = 0;
-
-    // head: scan until aligned
-    while i < len && i % 8 != 0 {
-        if data[i] == 0 {
-            return Some(i);
-        }
-        i += 1;
-    }
-
-    // body: 8 bytes at a time
-    while i + 8 <= len {
-        let word = u64::from_ne_bytes(data[i..i + 8].try_into().expect(""));
-        // has-zero-byte algorithm
-        let mask = word.wrapping_sub(0x0101010101010101) & !word & 0x8080808080808080;
-        if mask != 0 {
-            let idx = i + (mask.trailing_zeros() / 8) as usize;
-            return Some(idx);
-        }
-        i += 8;
-    }
-
-    // tail
-    while i < len {
-        if data[i] == 0 {
-            return Some(i);
-        }
-        i += 1;
-    }
-
-    None
-}
-
-fn parse_scalar_simd(data: &[u8]) -> &str {
-    let nul = find_null_word(data).unwrap();
-    simd_from_utf8(&data[..nul]).unwrap()
-}
-
 #[cfg(test)]
 pub fn get_example_rel_map(
     arena: &Bump,
@@ -118,13 +72,14 @@ pub fn get_example_rel_map(
 }
 
 #[cfg(test)]
-pub fn get_example_rel(arena: &Bump) -> Relation {
+pub fn get_example_rel() -> Relation {
+    use bumpalo::collections::String;
     Relation {
         relation_oid: 1,
         name: "users".to_string(),
         namespace: "public".to_string(),
         replica_id: ReplicaKind::Row,
-        fields: bumpalo::vec![in arena;
+        fields: vec![
             Field {
                 name: "id".to_string(),
                 is_key: true,
@@ -142,13 +97,11 @@ pub fn get_example_rel(arena: &Bump) -> Relation {
 #[cfg(test)]
 pub fn get_example_rel_data(arena: &Bump) -> RelationData {
     RelationData {
-        inner: get_example_rel(arena),
-        key_fields: bumpalo::vec![in arena;
-            KeyField {
-                name: "id".to_string(),
-                kind: FieldKind::Int4,
-            }
-        ],
+        inner: get_example_rel(),
+        key_fields: vec![KeyField {
+            name: "id".to_string(),
+            kind: FieldKind::Int4,
+        }],
     }
 }
 
@@ -157,19 +110,19 @@ pub fn get_example_rel_map_keys(
     arena: &Bump,
 ) -> std::collections::HashMap<u32, RelationData, RandomState> {
     let mut relation_map = std::collections::HashMap::default();
-    relation_map.insert(1u32, get_example_rel_data_keys(arena));
+    relation_map.insert(1u32, get_example_rel_data_keys());
 
     relation_map
 }
 
 #[cfg(test)]
-pub fn get_example_rel_keys(arena: &Bump) -> Relation<'_> {
+pub fn get_example_rel_keys() -> Relation {
     Relation {
         relation_oid: 1,
         name: "users".to_string(),
         namespace: "public".to_string(),
         replica_id: ReplicaKind::Keys,
-        fields: bumpalo::vec![in arena;
+        fields: vec![
             Field {
                 name: "id".to_string(),
                 is_key: true,
@@ -185,15 +138,13 @@ pub fn get_example_rel_keys(arena: &Bump) -> Relation<'_> {
 }
 
 #[cfg(test)]
-pub fn get_example_rel_data_keys(arena: &Bump) -> RelationData<'_> {
+pub fn get_example_rel_data_keys() -> RelationData {
     RelationData {
-        inner: get_example_rel_keys(arena),
-        key_fields: bumpalo::vec![in arena;
-            KeyField {
-                name: "id".to_string(),
-                kind: FieldKind::Int4,
-            }
-        ],
+        inner: get_example_rel_keys(),
+        key_fields: vec![KeyField {
+            name: "id".to_string(),
+            kind: FieldKind::Int4,
+        }],
     }
 }
 
@@ -237,7 +188,7 @@ mod test {
 
         let arena = Bump::new();
 
-        let example_rel = get_example_rel_data_keys(&arena);
+        let example_rel = get_example_rel_data_keys();
 
         let key_tuple = get_old_tuple_data(&data, &example_rel, &arena);
         let key_tuple_manual = (vec![in &arena], 3);
@@ -317,7 +268,7 @@ mod test {
 
         let arena = Bump::new();
 
-        let example_rel = get_example_rel_data_keys(&arena);
+        let example_rel = get_example_rel_data_keys();
 
         let new_tuple = get_old_tuple_data(&data, &example_rel, &arena);
 

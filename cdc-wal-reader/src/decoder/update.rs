@@ -14,7 +14,7 @@ pub fn parse<'a>(
     data: &'a bytes::Bytes,
     relation_map: &'a HashMap<u32, RelationData, RandomState>,
     arena: &'a Bump,
-) -> Result<(ChangeEvent<'a>, &'a RelationData<'a>), DecoderError> {
+) -> Result<(ChangeEvent<'a>, &'a RelationData), DecoderError> {
     let start = Instant::now();
 
     if data.len() < 9 {
@@ -54,8 +54,8 @@ mod test {
     use bumpalo::{Bump, collections::vec, vec};
     use bytes::Bytes;
     use cdc_avro::{
-        Field, FieldKind, PgValue,
-        arena::{ChangeEvent, Op, Relation},
+        Field, FieldKind, PgValue, Relation,
+        arena::{ChangeEvent, Op},
     };
 
     use crate::decoder::{
@@ -102,10 +102,7 @@ mod test {
             rel: 1,
         };
 
-        assert_eq!(
-            event,
-            Ok((event_example, &get_example_rel_data_keys(&arena)))
-        );
+        assert_eq!(event, Ok((event_example, &get_example_rel_data_keys())));
     }
 
     #[test]

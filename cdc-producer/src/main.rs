@@ -4,7 +4,7 @@ use std::time::Duration;
 use anyhow::Result;
 
 use bumpalo::Bump;
-use cdc_avro::arena::{ChangeEvent, Relation};
+use cdc_avro::{Relation, arena::ChangeEvent};
 use cdc_wal_reader::Producer as CdcProducer;
 use futures_util::stream::StreamExt;
 use rdkafka::admin::{AdminClient, AdminOptions, NewTopic, ResourceSpecifier, TopicReplication};
@@ -52,11 +52,7 @@ impl CdcProducer for KafkaProducer {
         Ok(())
     }
 
-    async fn send<'a>(
-        &self,
-        relation: &Relation<'a>,
-        event: ChangeEvent<'a>,
-    ) -> Result<(), String> {
+    async fn send<'a>(&self, relation: &Relation, event: ChangeEvent<'a>) -> Result<(), String> {
         let payload = event.into_avro().map_err(|e| e.to_string())?;
         let topic = format!(
             "{}.events.{}.{}",
@@ -73,10 +69,7 @@ impl CdcProducer for KafkaProducer {
         Ok(())
     }
 
-    async fn on_relation<'a>(
-        &mut self,
-        relation: &Relation<'a>,
-    ) -> std::prelude::v1::Result<(), String> {
+    async fn on_relation(&mut self, relation: &Relation) -> std::prelude::v1::Result<(), String> {
         let relation_bin = relation.into_avro().map_err(|e| e.to_string())?;
 
         let rel_topic = format!("{}.relations", self.topic);

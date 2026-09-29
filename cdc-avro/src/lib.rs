@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize, Serializer, ser::SerializeStruct};
 use serde_avro_fast::Schema;
 use serde_repr::Serialize_repr;
 use std::sync::LazyLock;
+use thiserror::Error;
 
 /// Version compatible with bumpalo arenas. Serde is not compatible with custom
 /// allocators, so, we cannot provide serialization here.
@@ -9,7 +10,7 @@ pub mod arena {
     use bumpalo::collections::Vec;
     use serde::Serialize;
 
-    use super::{Field, PgValue, ReplicaKind};
+    use super::PgValue;
 
     #[derive(Serialize, Debug, Clone, PartialEq)]
     pub enum Op<'a> {
@@ -40,32 +41,12 @@ pub mod arena {
             serde_avro_fast::to_datum(&self, std::vec::Vec::with_capacity(256), &mut config)
         }
     }
-
-    #[derive(Serialize, Debug, Clone, PartialEq)]
-    pub struct Relation<'a> {
-        pub relation_oid: u32,
-        pub name: String,
-        pub namespace: String,
-        pub fields: Vec<'a, Field>,
-        pub replica_id: ReplicaKind,
-    }
-
-    impl<'a> Relation<'a> {
-        pub fn into_avro(&self) -> Result<std::vec::Vec<u8>, serde_avro_fast::ser::SerError> {
-            let schema = &super::RELATION_SCHEMA;
-
-            let mut config = serde_avro_fast::ser::SerializerConfig::new(schema);
-            serde_avro_fast::to_datum(&self, std::vec::Vec::with_capacity(256), &mut config)
-        }
-    }
 }
 
 pub mod owned {
-    use crate::Field;
     use serde::{Deserialize, Serialize};
-    use thiserror::Error;
 
-    use super::{PgValue, ReplicaKind};
+    use super::PgValue;
 
     #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
     pub enum Op<'a> {
@@ -100,7 +81,7 @@ pub mod owned {
     }
 
     impl<'a> ChangeEvent<'a> {
-        pub fn from_avro(slice: &'a [u8]) -> Result<Self, FromAvroError> {
+        pub fn from_avro(slice: &'a [u8]) -> Result<Self, super::FromAvroError> {
             Ok(serde_avro_fast::from_datum_slice::<ChangeEvent<'_>>(
                 slice,
                 &super::CHANGE_EVENT_SCHEMA,
@@ -109,52 +90,6 @@ pub mod owned {
 
         pub fn into_avro(&self) -> Result<std::vec::Vec<u8>, serde_avro_fast::ser::SerError> {
             let schema = &super::CHANGE_EVENT_SCHEMA;
-
-            let mut config = serde_avro_fast::ser::SerializerConfig::new(schema);
-            serde_avro_fast::to_datum(&self, std::vec::Vec::with_capacity(256), &mut config)
-        }
-    }
-
-    #[derive(Debug, Error)]
-    pub enum FromAvroError {
-        #[error("No events where found in the transmission")]
-        NoEvents,
-
-        #[error("While ng from Avro: {0}")]
-        Avro(#[from] serde_avro_fast::de::DeError),
-    }
-
-    impl PartialEq for FromAvroError {
-        fn eq(&self, other: &Self) -> bool {
-            use FromAvroError::*;
-
-            match (self, other) {
-                (NoEvents, NoEvents) => true,
-                (Avro(_), Avro(_)) => true,
-                _ => false,
-            }
-        }
-    }
-
-    #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-    pub struct Relation {
-        pub relation_oid: u32,
-        pub name: String,
-        pub namespace: String,
-        pub fields: Vec<Field>,
-        pub replica_id: ReplicaKind,
-    }
-
-    impl Relation {
-        pub fn from_avro(slice: &[u8]) -> Result<Self, FromAvroError> {
-            Ok(serde_avro_fast::from_datum_slice::<Relation>(
-                slice,
-                &super::CHANGE_EVENT_SCHEMA,
-            )?)
-        }
-
-        pub fn into_avro(&self) -> Result<std::vec::Vec<u8>, serde_avro_fast::ser::SerError> {
-            let schema = &super::RELATION_SCHEMA;
 
             let mut config = serde_avro_fast::ser::SerializerConfig::new(schema);
             serde_avro_fast::to_datum(&self, std::vec::Vec::with_capacity(256), &mut config)
@@ -178,19 +113,12 @@ const RELATION_SCHEMA: LazyLock<Schema> = LazyLock::new(|| {
         .expect("Failed to parse Avro schema")
 });
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct Field {
-    pub is_key: bool,
-    pub name: String,
-    pub kind: FieldKind,
-}
-
 pub trait FieldAccess {
     fn get_name(&self) -> &str;
     fn get_kind(&self) -> FieldKind;
 }
 
-impl FieldAccess for Field {
+impl<'a> FieldAccess for Field {
     #[inline(always)]
     fn get_name(&self) -> &str {
         &self.name
@@ -200,6 +128,58 @@ impl FieldAccess for Field {
     fn get_kind(&self) -> FieldKind {
         self.kind
     }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct Relation {
+    pub relation_oid: u32,
+    pub name: String,
+    pub namespace: String,
+    pub fields: Vec<Field>,
+    pub replica_id: ReplicaKind,
+}
+
+impl Relation {
+    pub fn from_avro(slice: &[u8]) -> Result<Self, FromAvroError> {
+        Ok(serde_avro_fast::from_datum_slice::<Relation>(
+            slice,
+            &CHANGE_EVENT_SCHEMA,
+        )?)
+    }
+
+    pub fn into_avro(&self) -> Result<std::vec::Vec<u8>, serde_avro_fast::ser::SerError> {
+        let schema = &RELATION_SCHEMA;
+
+        let mut config = serde_avro_fast::ser::SerializerConfig::new(schema);
+        serde_avro_fast::to_datum(&self, std::vec::Vec::with_capacity(256), &mut config)
+    }
+}
+#[derive(Debug, Error)]
+pub enum FromAvroError {
+    #[error("No events where found in the transmission")]
+    NoEvents,
+
+    #[error("While ng from Avro: {0}")]
+    Avro(#[from] serde_avro_fast::de::DeError),
+}
+
+impl PartialEq for FromAvroError {
+    fn eq(&self, other: &Self) -> bool {
+        use FromAvroError::*;
+
+        match (self, other) {
+            (NoEvents, NoEvents) => true,
+            (Avro(_), Avro(_)) => true,
+            _ => false,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct Field {
+    pub is_key: bool,
+    pub name: String,
+    pub kind: FieldKind,
 }
 
 #[derive(Serialize, Deserialize, Copy, Clone, Debug, PartialEq)]
@@ -259,7 +239,9 @@ mod tests {
     mod owned {
         use std::assert_matches;
 
-        use super::super::{Field, FieldAccess, FieldKind, PgValue, ReplicaKind, owned::*};
+        use super::super::{
+            Field, FieldAccess, FieldKind, PgValue, Relation, ReplicaKind, owned::*,
+        };
 
         fn roundtrip(event: ChangeEvent<'_>) {
             let bytes = event.into_avro().unwrap();

@@ -26,10 +26,19 @@ bumpalo = { version = "3.20.3", features = ["collections", "serde"] }
 ahash = "0.8.12"
 serde_repr = "0.1.21"
 metrics = "0.24.6"
+branches = "0.5.0"
+criterion = "0.5"
+
+[[bin]]
+name = "relation-decode"
+path = "src/bin/relation_decode.rs"
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
 
+
+[profile.bench]
+debug = true
 
 [[bench]]
 name = "decoding"
@@ -37,4 +46,8 @@ harness = false
 
 [[bench]]
 name = "insert"
+harness = false
+
+[[bench]]
+name = "relation"
 harness = false

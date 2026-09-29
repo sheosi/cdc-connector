@@ -1,7 +1,7 @@
 use bumpalo::{Bump, collections::CollectIn};
 use cdc_avro::{
-    Field, PgValue, ReplicaKind,
-    owned::{ChangeEvent, Op, Relation},
+    Field, PgValue, Relation, ReplicaKind,
+    owned::{ChangeEvent, Op},
 };
 use cdc_sink::{KafkaConfig, KafkaSink, MetricsConfig, TableNames};
 use config::Config;

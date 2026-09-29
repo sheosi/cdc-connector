@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use bumpalo::Bump;
 use cdc_avro::{
-    PgValue,
-    owned::{ChangeEvent, Op, Relation},
+    PgValue, Relation,
+    owned::{ChangeEvent, Op},
 };
 use cdc_sink::{KafkaConfig, KafkaSink};
 use cdc_sink::{MetricsConfig, TableNames};

@@ -10,7 +10,7 @@ pub fn parse<'a>(
     data: &'a [u8],
     relation_map: &'a HashMap<u32, RelationData, RandomState>,
     arena: &'a Bump,
-) -> Result<(ChangeEvent<'a>, &'a RelationData<'a>), DecoderError> {
+) -> Result<(ChangeEvent<'a>, &'a RelationData), DecoderError> {
     let start = Instant::now();
 
     if data.len() < 5 {
@@ -47,11 +47,9 @@ mod test {
     use cdc_avro::{
         Field,
         FieldKind::{Int4, Text},
-        PgValue, ReplicaKind,
-        arena::{ChangeEvent, Op, Relation},
+        PgValue, Relation, ReplicaKind,
+        arena::{ChangeEvent, Op},
     };
-
-    use bumpalo::vec;
 
     use crate::decoder::{
         DecoderError,
@@ -67,7 +65,7 @@ mod test {
                 name: "users".to_string(),
                 namespace: "public".to_string(),
                 replica_id: ReplicaKind::Row,
-                fields: vec![ in arena;
+                fields: vec![
                     Field {
                         is_key: true,
                         name: "id".to_string(),
@@ -85,12 +83,10 @@ mod test {
                     },
                 ],
             },
-            key_fields: vec![in arena;
-                KeyField {
-                    name: "id".to_string(),
-                    kind: Int4,
-                }
-            ],
+            key_fields: vec![KeyField {
+                name: "id".to_string(),
+                kind: Int4,
+            }],
         }
     }
 

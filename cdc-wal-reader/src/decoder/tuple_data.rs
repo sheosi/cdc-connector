@@ -192,7 +192,7 @@ mod test {
 
         let arena = Bump::new();
 
-        let relation = get_example_rel(&arena);
+        let relation = get_example_rel();
 
         let tuple_data = parse(&data, &arena, &relation.fields);
         let tuple_data_manual = vec![in &arena;];
@@ -206,7 +206,7 @@ mod test {
 
         let arena = Bump::new();
 
-        let relation = get_example_rel(&arena);
+        let relation = get_example_rel();
 
         let tuple_data = parse(&data, &arena, &relation.fields);
         let tuple_data_manual = vec![in &arena; col_byte_id()];
@@ -226,7 +226,7 @@ mod test {
 
         let arena = Bump::new();
 
-        let relation = &get_example_rel(&arena);
+        let relation = &get_example_rel();
 
         let tuple_data = parse(&data, &arena, &relation.fields);
         let tuple_data_manual = vec![in &arena; col_byte_id(), col_text_name()];
@@ -240,7 +240,7 @@ mod test {
 
         let arena = Bump::new();
 
-        let relation = &get_example_rel(&arena);
+        let relation = &get_example_rel();
 
         let tuple_data = parse(&data, &arena, &relation.fields);
 
@@ -253,7 +253,7 @@ mod test {
 
         let arena = Bump::new();
 
-        let relation = &get_example_rel(&arena);
+        let relation = &get_example_rel();
 
         let tuple_data = parse(&data, &arena, &relation.fields);
 
@@ -266,7 +266,7 @@ mod test {
 
         let arena = Bump::new();
 
-        let relation = &get_example_rel(&arena);
+        let relation = &get_example_rel();
 
         let tuple_data = parse(&data, &arena, &relation.fields);
 
@@ -279,7 +279,7 @@ mod test {
 
         let arena = Bump::new();
 
-        let relation = &get_example_rel(&arena);
+        let relation = &get_example_rel();
 
         let tuple_data = parse(&data, &arena, &relation.fields);
 
@@ -292,7 +292,7 @@ mod test {
 
         let arena = Bump::new();
 
-        let relation = &get_example_rel(&arena);
+        let relation = &get_example_rel();
 
         let tuple_data = parse(&data, &arena, &relation.fields);
 
@@ -305,7 +305,7 @@ mod test {
 
         let arena = Bump::new();
 
-        let relation = &get_example_rel(&arena);
+        let relation = &get_example_rel();
 
         let tuple_data = parse(&data, &arena, &relation.fields);
 
@@ -320,7 +320,7 @@ mod test {
 
         let arena = Bump::new();
 
-        let relation = &get_example_rel(&arena);
+        let relation = &get_example_rel();
 
         let tuple_data = parse(&data, &arena, &relation.fields);
 
@@ -333,7 +333,7 @@ mod test {
 
         let arena = Bump::new();
 
-        let relation = &get_example_rel(&arena);
+        let relation = &get_example_rel();
 
         let tuple_data = parse(&data, &arena, &relation.fields);
 

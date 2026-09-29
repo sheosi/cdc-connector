@@ -493,6 +493,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "branches"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5fff8e8a78270a39fea587b71eb20cdb5d80a16f692ecdec704f789f8904d003"
+
+[[package]]
 name = "brotli"
 version = "8.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -646,6 +652,7 @@ dependencies = [
  "ahash",
  "anyhow",
  "apache-avro",
+ "branches",
  "bumpalo",
  "bytes",
  "cdc-avro",

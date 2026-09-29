@@ -6,7 +6,7 @@ use std::{
 
 use ahash::RandomState;
 use bumpalo::Bump;
-use cdc_avro::owned::{ChangeEvent, Relation};
+use cdc_avro::{Relation, owned::ChangeEvent};
 use chrono::Utc;
 use futures_util::StreamExt;
 use rdkafka::{

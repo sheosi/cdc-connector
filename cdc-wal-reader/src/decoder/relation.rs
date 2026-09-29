@@ -1,22 +1,36 @@
-use bumpalo::collections::Vec;
-use bumpalo::{Bump, collections::CollectIn};
 use bytes::Bytes;
-use cdc_avro::{Field, FieldAccess, FieldKind, ReplicaKind, arena::Relation};
-use std::ffi::CStr;
+use cdc_avro::{Field, FieldAccess, FieldKind, Relation, ReplicaKind};
+use simdutf8::basic::from_utf8 as simd_from_utf8;
 
 use crate::decoder::DecoderError;
 
+fn extract_string<'a>(data: &[u8]) -> Result<String, DecoderError> {
+    let nul = find_null_word(data).ok_or(DecoderError::TruncatedInput)?;
+
+    // Fast path: usually postgres identifiers are pure ascii
+    if data[..nul].iter().all(|&b| b < 128) {
+        let mut s = Vec::with_capacity(nul);
+        s.extend_from_slice(&data[..nul]);
+
+        // This is fine, we already checked these were all ASCII
+        Ok(unsafe { String::from_utf8_unchecked(s) })
+    } else {
+        // Rare: quoted Unicode identifier, validate properly
+        Ok(simd_from_utf8(&data[..nul])?.to_string())
+    }
+}
+
 #[derive(Debug, PartialEq)]
-pub struct RelationData<'a> {
-    pub inner: Relation<'a>,
+pub struct RelationData {
+    pub inner: Relation,
 
     /// A subset of above, they are the fields marked as keys, for when only keys
     /// are searched for
-    pub key_fields: Vec<'a, KeyField>,
+    pub key_fields: Vec<KeyField>,
 }
 
-impl<'a> RelationData<'a> {
-    pub fn parse(data: Bytes, arena: &'a Bump) -> Result<RelationData<'a>, DecoderError> {
+impl RelationData {
+    pub fn parse(data: Bytes) -> Result<RelationData, DecoderError> {
         // 'R' (1B) + rel oid (4B) + namespace end (1B) + relname end (1B)
         // + repl_id (1B) + num_cols (2B)
         if data.len() < 10 {
@@ -24,15 +38,9 @@ impl<'a> RelationData<'a> {
         }
 
         let relation_oid = u32::from_be_bytes(data[1..5].try_into().expect(""));
-        let namespace = CStr::from_bytes_until_nul(&data[5..])
-            .map_err(|_| DecoderError::TruncatedInput)?
-            .to_str()?
-            .to_string();
 
-        let relname = CStr::from_bytes_until_nul(&data[5 + namespace.len() + 1..])
-            .map_err(|_| DecoderError::TruncatedInput)?
-            .to_str()?
-            .to_string();
+        let namespace = extract_string(&data[5..])?;
+        let relname = extract_string(&data[5 + namespace.len() + 1..])?;
 
         // Check for both replica id an numbers of cols
         if data.len() < 5 + namespace.len() + 1 + relname.len() + 3 {
@@ -53,7 +61,7 @@ impl<'a> RelationData<'a> {
         );
 
         let mut col_start_id = replica_id_pos + 3;
-        let mut fields = bumpalo::collections::Vec::with_capacity_in(cols as usize, arena);
+        let mut fields = Vec::with_capacity(cols as usize);
 
         for _ in 0..cols {
             match parse_field(&data[col_start_id..]) {
@@ -83,7 +91,8 @@ impl<'a> RelationData<'a> {
                         None
                     }
                 })
-                .collect_in(arena),
+                .collect(),
+
             inner: Relation {
                 relation_oid,
                 namespace,
@@ -127,15 +136,13 @@ pub enum FieldParseResult {
 /// store it, but we need the size of it
 fn parse_field(data: &[u8]) -> Result<FieldParseResult, DecoderError> {
     // The minimum: flag (1B) + string_end (1B) + oid (4B) + mod (4B)
+    //
     if data.len() < 10 {
         return Err(DecoderError::TruncatedInput);
     }
 
     let flag = data[0];
-    let name = CStr::from_bytes_until_nul(&data[1..])
-        .map_err(|_| DecoderError::TruncatedInput)?
-        .to_str()?
-        .to_string();
+    let name = extract_string(&data[1..])?;
 
     let l_name = name.len();
 
@@ -175,9 +182,60 @@ fn kind_from_oid_mod(t_oid: u32, t_mod: u32) -> Result<FieldKind, DecoderError> 
     }
 }
 
+fn find_null_word(data: &[u8]) -> Option<usize> {
+    use std::arch::x86_64::{
+        __m128i, _mm_cmpeq_epi8, _mm_loadu_si128, _mm_movemask_epi8, _mm_setzero_si128,
+    };
+    use std::cmp::min;
+
+    let len = data.len();
+
+    // Fast path: strings shorter than 16 bytes
+    if len < 16 {
+        let mut buf = [0xFFu8; 16];
+        buf[..len].copy_from_slice(&data[..len]);
+        unsafe {
+            let chunk = _mm_loadu_si128(buf.as_ptr() as *const __m128i);
+            let mask = _mm_movemask_epi8(_mm_cmpeq_epi8(chunk, _mm_setzero_si128()));
+            if mask != 0 {
+                return Some(mask.trailing_zeros() as usize);
+            }
+        }
+        return None;
+    }
+
+    unsafe {
+        let ptr = data.as_ptr() as *const __m128i;
+        let chunk = _mm_loadu_si128(ptr); // movdqu
+
+        let zeros = _mm_setzero_si128();
+        let cmp = _mm_cmpeq_epi8(chunk, zeros); // 0xFF where byte == 0
+        let mask = _mm_movemask_epi8(cmp); // 16-bit mask
+
+        if mask != 0 {
+            return Some(mask.trailing_zeros() as usize);
+        }
+    }
+
+    // General case: strings longer than 16 bytes
+    let mut i = 24; // This i is the last_position
+    while i <= len + 7 {
+        let boundary = min(i, len);
+        let word = u64::from_ne_bytes(data[boundary - 8..boundary].try_into().unwrap());
+        let mask = word.wrapping_sub(0x0101010101010101) & !word & 0x8080808080808080;
+
+        if mask != 0 {
+            return Some((boundary - 8) + (mask.trailing_zeros() / 8) as usize);
+        }
+        i += 8;
+    }
+
+    None
+}
+
 #[cfg(test)]
 mod test {
-    use bumpalo::{Bump, vec};
+    use bumpalo::Bump;
     use bytes::Bytes;
 
     use crate::decoder::{
@@ -219,18 +277,16 @@ mod test {
             0, 0, 0, 0, // Attrmod
         ]);
 
-        let arena = Bump::new();
-
-        let relation = RelationData::parse(data, &arena);
+        let relation = RelationData::parse(data);
 
         let relation_manual = RelationData {
-            key_fields: vec![in &arena; key_field_id()],
+            key_fields: vec![key_field_id()],
             inner: Relation {
                 relation_oid: 1,
                 namespace: "public".to_string(),
                 name: "users".to_string(),
                 replica_id: ReplicaKind::Keys,
-                fields: vec![in &arena; field_id()],
+                fields: vec![field_id()],
             },
         };
 
@@ -254,9 +310,7 @@ mod test {
     fn no_relation() {
         let data = Bytes::from_static(&[b'R']);
 
-        let arena = Bump::new();
-
-        let relation = RelationData::parse(data, &arena);
+        let relation = RelationData::parse(data);
 
         assert_eq!(relation, Err(DecoderError::TruncatedInput));
     }
@@ -265,9 +319,7 @@ mod test {
     fn no_namespace() {
         let data = Bytes::from_static(&[b'R', 0, 0, 0, 0]);
 
-        let arena = Bump::new();
-
-        let relation = RelationData::parse(data, &arena);
+        let relation = RelationData::parse(data);
 
         assert_eq!(relation, Err(DecoderError::TruncatedInput));
     }
@@ -280,9 +332,7 @@ mod test {
             b'p', b'u', b'b', b'l', b'i', b'c', 0, // Namespace
         ]);
 
-        let arena = Bump::new();
-
-        let relation = RelationData::parse(data, &arena);
+        let relation = RelationData::parse(data);
 
         assert_eq!(relation, Err(DecoderError::TruncatedInput));
     }
@@ -295,9 +345,7 @@ mod test {
             b'p', b'u', b'b', b'l', b'i', b'c', // Namespace
         ]);
 
-        let arena = Bump::new();
-
-        let relation = RelationData::parse(data, &arena);
+        let relation = RelationData::parse(data);
 
         assert_eq!(relation, Err(DecoderError::TruncatedInput));
     }
@@ -311,9 +359,7 @@ mod test {
             b'u', b's', b'e', b'r', b's', // Relation name
         ]);
 
-        let arena = Bump::new();
-
-        let relation = RelationData::parse(data, &arena);
+        let relation = RelationData::parse(data);
 
         assert_eq!(relation, Err(DecoderError::TruncatedInput));
     }
@@ -328,9 +374,7 @@ mod test {
             0, // Replica identity setting
         ]);
 
-        let arena = Bump::new();
-
-        let relation = RelationData::parse(data, &arena);
+        let relation = RelationData::parse(data);
 
         assert_eq!(relation, Err(DecoderError::TruncatedInput));
     }
@@ -346,9 +390,7 @@ mod test {
             0, 1, // Number of columns
         ]);
 
-        let arena = Bump::new();
-
-        let relation = RelationData::parse(data, &arena);
+        let relation = RelationData::parse(data);
 
         assert_eq!(relation, Err(DecoderError::TruncatedInput));
     }
@@ -366,9 +408,7 @@ mod test {
             1, // Flags: Is key
         ]);
 
-        let arena = Bump::new();
-
-        let relation = RelationData::parse(data, &arena);
+        let relation = RelationData::parse(data);
 
         assert_eq!(relation, Err(DecoderError::TruncatedInput));
     }
@@ -387,9 +427,7 @@ mod test {
             b'i', b'd',
         ]);
 
-        let arena = Bump::new();
-
-        let relation = RelationData::parse(data, &arena);
+        let relation = RelationData::parse(data);
 
         assert_eq!(relation, Err(DecoderError::TruncatedInput));
     }
@@ -408,9 +446,7 @@ mod test {
             b'i', b'd', 0, // Name of the column: id
         ]);
 
-        let arena = Bump::new();
-
-        let relation = RelationData::parse(data, &arena);
+        let relation = RelationData::parse(data);
 
         assert_eq!(relation, Err(DecoderError::TruncatedInput));
     }
@@ -430,9 +466,7 @@ mod test {
             0, 0, 0, 23, // Type oid (int4)
         ]);
 
-        let arena = Bump::new();
-
-        let relation = RelationData::parse(data, &arena);
+        let relation = RelationData::parse(data);
 
         assert_eq!(relation, Err(DecoderError::TruncatedInput));
     }
@@ -453,9 +487,7 @@ mod test {
             0, 0, 0, 0, // attrmod
         ]);
 
-        let arena = Bump::new();
-
-        let relation = RelationData::parse(data, &arena);
+        let relation = RelationData::parse(data);
 
         assert_eq!(relation, Err(DecoderError::InvalidOid(0)));
     }
