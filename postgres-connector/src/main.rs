@@ -62,13 +62,14 @@ struct PostgresConfig {
     host: String,
     user: String,
     password: String,
+    port: u16,
 }
 
 impl PostgresConfig {
     fn to_postgres_string(&self) -> String {
         format!(
-            "host={} user={} password={}",
-            self.host, self.user, self.password
+            "host={} user={} password={} port={}",
+            self.host, self.user, self.password, self.port
         )
     }
 }

@@ -6,6 +6,7 @@ user = "cdc"
 password = "cdc"
 slot_name = "cdc_slot"
 publication = "cdc_pub"
+port = 5400
 
 [kafka]
 brokers="localhost:9092"

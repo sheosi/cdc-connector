@@ -92,6 +92,7 @@ services:
 #       CDC_PROD_POSTGRES_USER = "cdc"
 #       CDC_PROD_POSTGRES_PASSWORD = "cdc"
 #       CDC_PROD_POSTGRES_SLOT_NAME = "cdc_slot"
+#       CDC_PROD_POSTGRES_PORT = 5400
 #       CDC_PROD_KAFKA_BROKERS = "localhost:9092"
 #       CDC_PROD_KAFKA_TOPIC = "example-topic"
 #       CDC_PROD_KAFKA_KEY = "miau"
@@ -115,6 +116,7 @@ services:
 #       PG_CONN_POSTGRES_USER = "cdc"
 #       PG_CONN_POSTGRES_PASSWORD = "cdc"
 #       PG_CONN_POSTGRES_SLOT_NAME = "cdc_slot"
+#       PG_CONN_POSTGRES_PORT = 5401
 #       PG_CONN_KAFKA_BROKERS = ""
 #       PG_CONN_KAFKA_TOPIC = "example-topic"
 #       PG_CONN_KAFKA_KEY = "miau"
