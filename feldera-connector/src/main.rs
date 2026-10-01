@@ -133,7 +133,8 @@ impl KafkaSink for FelderaConnector {
 #[tokio::main]
 async fn main() {
     let config: BridgeConfig = Config::builder()
-        .add_source(config::File::with_name("feldera-connector"))
+        .add_source(config::File::with_name("feldera-connector").required(false))
+        .add_source(config::Environment::with_prefix("FELD_CONN").separator("_"))
         .build()
         .expect("Failed to load feldera-connector config")
         .try_deserialize()
@@ -142,7 +143,6 @@ async fn main() {
     cdc_sink::init_metrics(config.metrics);
 
     let mut arena = Bump::with_capacity(2048);
-    let relations_arena = Bump::with_capacity(4096);
 
     let kafka = config.kafka.connect().await;
     let relations = kafka

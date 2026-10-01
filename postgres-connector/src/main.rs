@@ -21,7 +21,8 @@ mod statements;
 #[tokio::main]
 async fn main() {
     let config: BridgeConfig = Config::builder()
-        .add_source(config::File::with_name("postgres-connector"))
+        .add_source(config::File::with_name("postgres-connector").required(false))
+        .add_source(config::Environment::with_prefix("PG_CONN").separator("_"))
         .build()
         .expect("Failed to find postgres-connect config")
         .try_deserialize()
@@ -30,7 +31,6 @@ async fn main() {
     cdc_sink::init_metrics(config.metrics);
 
     let mut arena = Bump::with_capacity(2048);
-    let relations_arena = Bump::with_capacity(4096);
 
     let kafka = config.kafka.connect().await;
     let relations = kafka

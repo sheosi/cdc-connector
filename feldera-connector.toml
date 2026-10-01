@@ -1,0 +1,10 @@
+[postgres]
+host = "127.0.0.1"
+user = "cdc"
+password = "cdc"
+slot_name = "cdc_slot"
+
+
+[feldera]
+url = ""
+pipeline = ""

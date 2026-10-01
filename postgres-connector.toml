@@ -1,0 +1,11 @@
+[postgres]
+host = "127.0.0.1"
+user = "cdc"
+password = "cdc"
+slot_name = "cdc_slot"
+
+[kafka]
+brokers=""
+topic="example-topic"
+key="miau"
+group_id="default"

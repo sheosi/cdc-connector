@@ -165,7 +165,7 @@ async fn read_lsn(kafka_config: &KafkaConfig) -> Result<u64, rdkafka::error::Kaf
 
     let consumer: StreamConsumer = ClientConfig::new()
         .set("group.id", "producer-lsn-read".to_string())
-        .set("boostrap.servers", kafka_config.brokers.clone())
+        .set("bootstrap.servers", kafka_config.brokers.clone())
         .set("enable.partition.eof", "false")
         .set("session.timeout.ms", "6000")
         .set("isolation.level", "read_committed")
@@ -219,34 +219,6 @@ async fn ensure_topic(
         return Ok(());
     }
 
-    let topic_meta = &metadata.topics()[0];
-    if topic_meta.partitions().len() != partitions as usize {
-        return Err(format!("{} has wrong partition count", topic));
-    }
-
-    let resource = ResourceSpecifier::Topic(topic);
-    let configs = admin
-        .describe_configs(&[resource], &AdminOptions::new())
-        .await
-        .map_err(|e| e.to_string())?;
-
-    for config in configs {
-        if let Ok(config) = config {
-            for entry in config.entries {
-                if entry.name == "cleanup.policy" {
-                    let is_compact = matches!(entry.value.as_deref(), Some("compact"));
-
-                    if !(compact && is_compact || !compact && !is_compact) {
-                        eprintln!(
-                            "Correctly setting compactability of topic '{}' has failed",
-                            topic
-                        );
-                        panic!();
-                    }
-                }
-            }
-        }
-    }
     Ok(())
 }
 
@@ -276,7 +248,8 @@ async fn check_topics(kafka_config: &KafkaConfig) -> Result<(), ()> {
 #[tokio::main]
 async fn main() -> Result<()> {
     let own_config: ProducerConfig = config::Config::builder()
-        .add_source(config::File::with_name("cdc-producer"))
+        .add_source(config::File::with_name("cdc-producer").required(false))
+        .add_source(config::Environment::with_prefix("CDC_PROD").separator("_"))
         .build()
         .expect("Failed to find cdc-producer config")
         .try_deserialize()

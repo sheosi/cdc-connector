@@ -1,7 +1,7 @@
 services:
-  postgres:
+  postgres-source:
     image: docker.io/library/postgres:16
-    container_name: cdc-postgres
+    container_name: cdc-postgres-source
     environment:
       POSTGRES_USER: cdc
       POSTGRES_PASSWORD: cdc
@@ -16,6 +16,25 @@ services:
       - max_wal_senders=4
     ports:
       - "5400:5432"
+    volumes:
+      - ./scripts/init-source.sql:/docker-entrypoint-initdb.d/setup.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cdc -d cdc"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  postgres-sink:
+    image: docker.io/library/postgres:16
+    container_name: cdc-postgres-sink
+    environment:
+      POSTGRES_USER: cdc
+      POSTGRES_PASSWORD: cdc
+      POSTGRES_DB: cdc
+    ports:
+      - "5401:5432"
+    volumes:
+      - ./scripts/init-sink.sql:/docker-entrypoint-initdb.d/setup.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U cdc -d cdc"]
       interval: 5s
@@ -55,7 +74,109 @@ services:
       timeout: 5s
       retries: 10
 
+  redpanda-console:
+    image: docker.redpanda.com/redpandadata/console:v2.8.0
+    container_name: cdc-redpanda-console
+    environment:
+      KAFKA_BROKERS: redpanda:29092
+    ports:
+      - "8079:8080"
+    depends_on:
+      redpanda:
+        condition: service_healthy
+
+#   cdc-producer:
+#     environment:
+#       CDC_PROD_WILL_CONNECT_TO_FELDERA = "false"
+#       CDC_PROD_POSTGRES_HOST = "localhost"
+#       CDC_PROD_POSTGRES_USER = "cdc"
+#       CDC_PROD_POSTGRES_PASSWORD = "cdc"
+#       CDC_PROD_POSTGRES_SLOT_NAME = "cdc_slot"
+#       CDC_PROD_KAFKA_BROKERS = "localhost:9092"
+#       CDC_PROD_KAFKA_TOPIC = "example-topic"
+#       CDC_PROD_KAFKA_KEY = "miau"
+#
+#     build:
+#       context: .
+#       dockerfile: Dockerfile
+#     container_name: cdc-producer
+#     command: ["/app/cdc-producer"]
+#     ports:
+#       - "9000:9000"
+#     depends_on:
+#       postgres-source:
+#         condition: service_healthy
+#       redpanda:
+#         condition: service_healthy
+#
+#   postgres-connector:
+#     environment:
+#       PG_CONN_POSTGRES_HOST = "127.0.0.1"
+#       PG_CONN_POSTGRES_USER = "cdc"
+#       PG_CONN_POSTGRES_PASSWORD = "cdc"
+#       PG_CONN_POSTGRES_SLOT_NAME = "cdc_slot"
+#       PG_CONN_KAFKA_BROKERS = ""
+#       PG_CONN_KAFKA_TOPIC = "example-topic"
+#       PG_CONN_KAFKA_KEY = "miau"
+#       PG_CONN_KAFKA_GROUP_ID = "default"
+#
+#     build:
+#       context: .
+#       dockerfile: Dockerfile
+#     container_name: cdc-postgres-connector
+#     command: ["/app/postgres-connector"]
+#     ports:
+#       - "9001:9001"
+#     depends_on:
+#       postgres-sink:
+#         condition: service_healthy
+#       redpanda:
+#         condition: service_healthy
+#
+#   feldera-connector:
+#     environment:
+#       FELD_CONN_KAFKA_BROKERS = ""
+#       FELD_CONN_KAFKA_TOPIC = "example-topic"
+#       FELD_CONN_KAFKA_KEY = "miau"
+#       FELD_CONN_KAFKA_GROUP_ID = "default"
+#       FELD_CONN_FELDERA_URL = ""
+#       FELD_CONN_FELDERA_PIPELINE = ""
+#
+#
+#     build:
+#       context: .
+#       dockerfile: Dockerfile
+#     container_name: cdc-postgres-connector
+#     command: ["/app/postgres-connector"]
+#     ports:
+#       - "9001:9001"
+#     depends_on:
+#       postgres-sink:
+#         condition: service_healthy
+#       redpanda:
+#         condition: service_healthy
+#
+  prometheus:
+    image: docker.io/prom/prometheus:v2.55.0
+    container_name: cdc-prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+    volumes:
+      - ./docker/prometheus.yml:/etc/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+
   grafana:
-    image: grafana/grafana
+    image: docker.io/grafana/grafana:11.1.0
+    container_name: cdc-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_DEFAULT_THEME: dark
+    volumes:
+      - ./docker/grafana/datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml:ro
+      - ./docker/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
     ports:
       - "3000:3000"
+    depends_on:
+      - prometheus

@@ -40,7 +40,7 @@ impl KafkaConfig {
 
         let consumer: StreamConsumer = ClientConfig::new()
             .set("group.id", self.group_id)
-            .set("boostrap.servers", self.brokers)
+            .set("bootstrap.servers", self.brokers)
             .set("enable.partition.eof", "false")
             .set("session.timeout.ms", "6000")
             .set("isolation.level", "read_committed")
