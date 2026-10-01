@@ -24,7 +24,6 @@ bumpalo = { version = "3.20.3", features = ["collections", "serde"] }
 
 # Faster hash
 ahash = "0.8.12"
-serde_repr = "0.1.21"
 metrics = "0.24.6"
 branches = "0.5.0"
 criterion = "0.5"

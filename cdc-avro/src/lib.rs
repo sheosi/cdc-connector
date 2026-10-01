@@ -1,7 +1,10 @@
-use serde::{Deserialize, Serialize, Serializer, ser::SerializeStruct};
+use serde::{
+    Deserialize, Deserializer, Serialize, Serializer,
+    de::{MapAccess, Visitor},
+    ser::SerializeStruct,
+};
 use serde_avro_fast::Schema;
-use serde_repr::Serialize_repr;
-use std::sync::LazyLock;
+use std::{fmt, sync::LazyLock};
 use thiserror::Error;
 
 /// Version compatible with bumpalo arenas. Serde is not compatible with custom
@@ -97,9 +100,9 @@ pub mod owned {
     }
 }
 
-const CHANGE_EVENT_SCHEMA_STR: &str = r#"{"type":"record","name":"ChangeEvent","fields":[{"name":"op","type":[{"type":"record","name":"Insert","fields":[{"name":"row","type":{"type":"array","items":[{"type":"record","name":"Text","fields":[{"name":"Text","type":"string"}]},{"type":"record","name":"Int4","fields":[{"name":"Int4","type":"int"}]}]}}]},{"type":"record","name":"Update","fields":[{"name":"old","type":{"type":"array","items":["Text","Int4"]}},{"name":"row","type":{"type":"array","items":["Text","Int4"]}}]},{"type":"record","name":"Delete","fields":[{"name":"old","type":{"type":"array","items":["Text","Int4"]}}]}]},{"name":"rel","type":"int"}]}"#;
+const CHANGE_EVENT_SCHEMA_STR: &str = r#"{"type":"record","name":"ChangeEvent","fields":[{"name":"op","type":[{"type":"record","name":"Insert","fields":[{"name":"row","type":{"type":"array","items":[{"type":"record","name":"Text","fields":[{"name":"Text","type":"string"}]},{"type":"record","name":"Int4","fields":[{"name":"Int4","type":"long"}]}]}}]},{"type":"record","name":"Update","fields":[{"name":"old","type":{"type":"array","items":["Text","Int4"]}},{"name":"row","type":{"type":"array","items":["Text","Int4"]}}]},{"type":"record","name":"Delete","fields":[{"name":"old","type":{"type":"array","items":["Text","Int4"]}}]}]},{"name":"rel","type":"long"}]}"#;
 
-const RELATION_SCHEMA_STR: &str = r#"{"type":"record","name":"Relation","fields":[{"name":"relation_oid","type":"int"},{"name":"namespace","type":"string"},{"name":"name","type":"string"},{"name":"fields","type":{"type":"array","items":{"type":"record","name":"Field","fields":[{"name":"name","type":"string"},{"name":"kind","type":"string"},{"name":"is_key","type":"boolean"}]}}}]}"#;
+const RELATION_SCHEMA_STR: &str = r#"{"type":"record","name":"Relation","fields":[{"name":"relation_oid","type":"long"},{"name":"namespace","type":"string"},{"name":"name","type":"string"},{"name":"fields","type":{"type":"array","items":{"type":"record","name":"Field","fields":[{"name":"is_key","type":"boolean"},{"name":"name","type":"string"},{"name":"kind","type":"int"}]}}},{"name":"replica_id","type":"int"}]}"#;
 
 const CHANGE_EVENT_SCHEMA: LazyLock<Schema> = LazyLock::new(|| {
     CHANGE_EVENT_SCHEMA_STR
@@ -143,7 +146,7 @@ impl Relation {
     pub fn from_avro(slice: &[u8]) -> Result<Self, FromAvroError> {
         Ok(serde_avro_fast::from_datum_slice::<Relation>(
             slice,
-            &CHANGE_EVENT_SCHEMA,
+            &RELATION_SCHEMA,
         )?)
     }
 
@@ -182,20 +185,53 @@ pub struct Field {
     pub kind: FieldKind,
 }
 
-#[derive(Serialize, Deserialize, Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum FieldKind {
     Int4,
     Text,
 }
 
-#[derive(Debug, Deserialize, Clone, PartialEq, Serialize_repr)]
-#[repr(u8)]
+impl Serialize for FieldKind {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_u8(*self as u8)
+    }
+}
+
+impl<'de> Deserialize<'de> for FieldKind {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use serde::de::Error as DeError;
+        match u8::deserialize(deserializer)? {
+            0 => Ok(FieldKind::Int4),
+            1 => Ok(FieldKind::Text),
+            other => Err(DeError::custom(format!("unknown FieldKind: {}", other))),
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum ReplicaKind {
     Keys,
     Row,
 }
 
-#[derive(Debug, Deserialize, Clone, PartialEq)]
+impl Serialize for ReplicaKind {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_u8(*self as u8)
+    }
+}
+
+impl<'de> Deserialize<'de> for ReplicaKind {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use serde::de::Error as DeError;
+        match u8::deserialize(deserializer)? {
+            0 => Ok(ReplicaKind::Keys),
+            1 => Ok(ReplicaKind::Row),
+            other => Err(DeError::custom(format!("unknown FieldKind: {}", other))),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum PgValue<'a> {
     Text(&'a str),
     Int4(u32),
@@ -218,6 +254,42 @@ impl<'a> Serialize for PgValue<'a> {
     }
 }
 
+impl<'de: 'a, 'a> Deserialize<'de> for PgValue<'a> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct PgValueVisitor<'a>(std::marker::PhantomData<&'a ()>);
+
+        impl<'de: 'a, 'a> Visitor<'de> for PgValueVisitor<'a> {
+            type Value = PgValue<'a>;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a Text or Int4 record")
+            }
+
+            fn visit_map<M: MapAccess<'de>>(self, mut map: M) -> Result<Self::Value, M::Error> {
+                let key: String = map
+                    .next_key()?
+                    .ok_or_else(|| serde::de::Error::custom("empty PgValue record"))?;
+
+                match key.as_str() {
+                    "Text" => {
+                        let value: &'de str = map.next_value()?;
+                        Ok(PgValue::Text(value))
+                    }
+                    "Int4" => {
+                        let value: u32 = map.next_value()?;
+                        Ok(PgValue::Int4(value))
+                    }
+                    other => Err(serde::de::Error::custom(format!(
+                        "unknown PgValue variant: {}",
+                        other
+                    ))),
+                }
+            }
+        }
+
+        deserializer.deserialize_map(PgValueVisitor(std::marker::PhantomData))
+    }
+}
 impl<'a> From<&'a str> for PgValue<'a> {
     fn from(value: &'a str) -> Self {
         Self::Text(value)
@@ -383,7 +455,7 @@ mod tests {
                 rel: 1024,
             };
 
-            roundtrip(event);
+            roundtrip_bugged(event);
         }
 
         #[test]
