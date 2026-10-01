@@ -13,9 +13,11 @@ use rdkafka::{
     ClientConfig, Message,
     config::RDKafkaLogLevel,
     consumer::{Consumer, StreamConsumer},
+    error::KafkaError,
 };
 use serde::Deserialize;
 use std::net::SocketAddr;
+use thiserror::Error;
 
 #[derive(Deserialize, Default)]
 pub struct KafkaConfig {
@@ -77,12 +79,12 @@ pub trait KafkaSink {
     fn on_event<'a>(
         &mut self,
         event: ChangeEvent<'a>,
-    ) -> impl std::future::Future<Output = Result<(), String>>;
+    ) -> impl std::future::Future<Output = Result<(), SinkError>>;
 
     fn on_relation(
         &mut self,
         relation: Relation,
-    ) -> impl std::future::Future<Output = Result<(), String>>;
+    ) -> impl std::future::Future<Output = Result<(), SinkError>>;
 }
 
 pub struct KafkaClient {
@@ -90,22 +92,39 @@ pub struct KafkaClient {
     topic: String,
 }
 
+#[derive(Debug, Error)]
+pub enum SinkError {
+    #[error("Found an unknown relation: {0}")]
+    UnknownRelation(u32),
+
+    #[error("Received an error from the platform: {0}")]
+    Platform(String),
+}
+
 impl KafkaClient {
-    pub async fn load_relations(&self, arena: &Bump) -> Result<HashMap<u32, Relation>, ()> {
+    pub async fn load_relations(&self, arena: &Bump) -> Result<HashMap<u32, Relation>, KafkaError> {
         let rel_topic = bumpalo::format!(in arena, "{}.relations", self.topic);
-        self.consumer.subscribe(&[&rel_topic]).map_err(|_| ())?;
+        self.consumer.subscribe(&[&rel_topic])?;
 
         let mut relations = HashMap::new();
         let mut stream = self.consumer.stream();
 
         loop {
             match tokio::time::timeout(Duration::from_millis(500), stream.next()).await {
-                Ok(Some(Ok(msg))) => {
-                    let payload = msg.payload_view::<[u8]>().unwrap().map_err(|_| ())?;
-                    let rel = Relation::from_avro(payload).map_err(|_| ())?;
-                    relations.insert(rel.relation_oid, rel);
-                }
-                Ok(Some(Err(_))) => return Err(()),
+                Ok(Some(Ok(msg))) => match msg.payload_view::<[u8]>() {
+                    Some(Ok(payload)) => match Relation::from_avro(payload) {
+                        Ok(rel) => {
+                            relations.insert(rel.relation_oid, rel);
+                        }
+                        Err(e) => eprintln!("Failed to decode message: {:?}", e),
+                    },
+                    Some(Err(())) => {
+                        // This shouldn't fail
+                        panic!("");
+                    }
+                    None => {}
+                },
+                Ok(Some(Err(e))) => return Err(e),
                 Ok(None) | Err(_) => break,
             }
         }

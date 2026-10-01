@@ -7,6 +7,7 @@ use pgwire_replication::{Lsn, ReplicationClient, ReplicationEvent};
 
 pub use pgwire_replication::ReplicationConfig;
 use serde::Deserialize;
+use thiserror::Error;
 use tokio_postgres::NoTls;
 
 use crate::decoder::{DecoderError, relation::RelationData};
@@ -78,7 +79,7 @@ pub async fn start_wal_input<P: Producer>(
     last_lsn: u64,
     replica_identity_full: bool,
     mut producer: P,
-) -> Result<(), pgwire_replication::PgWireError> {
+) -> Result<(), StartWalInputError> {
     let pg_config = ReplicationConfig::new(
         own_config.host,
         own_config.user,
@@ -90,9 +91,7 @@ pub async fn start_wal_input<P: Producer>(
     .with_start_lsn(Lsn(last_lsn))
     .with_port(own_config.port);
 
-    configure_replica_identity(&pg_config, replica_identity_full)
-        .await
-        .unwrap();
+    configure_replica_identity(&pg_config, replica_identity_full).await?;
     let mut client = ReplicationClient::connect(pg_config).await?;
 
     let arena = Bump::with_capacity(1024);
@@ -233,7 +232,7 @@ pub async fn start_wal_input<P: Producer>(
 async fn configure_replica_identity(
     config: &ReplicationConfig,
     replica_identity_full: bool,
-) -> Result<(), ()> {
+) -> Result<(), StartWalInputError> {
     let pg_config = tokio_postgres::Config::new()
         .host(&config.host)
         .port(config.port)
@@ -242,7 +241,7 @@ async fn configure_replica_identity(
         .dbname(&config.database)
         .to_owned();
 
-    let (clt, connection) = pg_config.connect(NoTls).await.unwrap();
+    let (clt, connection) = pg_config.connect(NoTls).await?;
     tokio::spawn(connection);
 
     let pub_names: Vec<String> = config.publication.names().to_vec();
@@ -260,8 +259,7 @@ async fn configure_replica_identity(
                WHERE pubname = ANY($1)",
             &[&pub_names],
         )
-        .await
-        .unwrap();
+        .await?;
 
     for row in rows {
         let schema: String = row.get(0);
@@ -272,8 +270,7 @@ async fn configure_replica_identity(
             &format!("ALTER TABLE {} REPLICA IDENTITY {}", fullname, identity),
             &[],
         )
-        .await
-        .unwrap();
+        .await?;
     }
 
     Ok(())
@@ -296,4 +293,13 @@ pub trait Producer: Send {
     -> impl std::future::Future<Output = Result<(), String>>;
 
     fn abort_transaction(&self) -> impl std::future::Future<Output = Result<(), String>>;
+}
+
+#[derive(Debug, Error)]
+pub enum StartWalInputError {
+    #[error("While setting identity {0}")]
+    PostgresError(#[from] tokio_postgres::Error),
+
+    #[error("From WAL operations {0}")]
+    WalError(#[from] pgwire_replication::PgWireError),
 }

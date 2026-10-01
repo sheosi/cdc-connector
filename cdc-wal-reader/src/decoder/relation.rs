@@ -221,7 +221,7 @@ fn find_null_word(data: &[u8]) -> Option<usize> {
     let mut i = 24; // This i is the last_position
     while i <= len + 7 {
         let boundary = min(i, len);
-        let word = u64::from_ne_bytes(data[boundary - 8..boundary].try_into().unwrap());
+        let word = u64::from_ne_bytes(data[boundary - 8..boundary].try_into().expect(""));
         let mask = word.wrapping_sub(0x0101010101010101) & !word & 0x8080808080808080;
 
         if mask != 0 {

@@ -1,7 +1,8 @@
 use bumpalo::Bump;
-use cdc_sink::TableNames;
+use cdc_sink::{SinkError, TableNames};
 use std::collections::HashMap;
 use std::fmt::Write;
+use thiserror::Error;
 use tokio_postgres::{Client, Statement};
 
 use crate::RelationCache;
@@ -19,15 +20,22 @@ impl InsertStatementCache {
         rel: u32,
         rows_table: &HashMap<u32, Vec<String>>,
         table_names: &TableNames,
-    ) -> Result<InsertStatement, tokio_postgres::Error> {
+    ) -> Result<InsertStatement, SinkError> {
         use std::collections::hash_map::Entry;
 
         match self.0.entry(rel) {
             Entry::Occupied(e) => Ok(e.get().clone()),
             Entry::Vacant(e) => Ok(e
                 .insert(
-                    InsertStatement::new(client, table_names.get(rel).unwrap(), &rows_table[&rel])
-                        .await?,
+                    InsertStatement::new(
+                        client,
+                        table_names
+                            .get(rel)
+                            .ok_or_else(|| SinkError::UnknownRelation(rel))?,
+                        &rows_table[&rel],
+                    )
+                    .await
+                    .map_err(|e| SinkError::Platform(e.to_string()))?,
                 )
                 .clone()),
         }
@@ -48,20 +56,27 @@ impl DeleteStatementCache {
         relation: u32,
         relation_cache: &RelationCache,
         arena: &Bump,
-    ) -> Result<DeleteStatement, tokio_postgres::Error> {
+    ) -> Result<DeleteStatement, SinkError> {
         use std::collections::hash_map::Entry;
 
         match self.0.entry(relation) {
             Entry::Occupied(e) => Ok(e.get().clone()),
             Entry::Vacant(e) => {
-                let keys = relation_cache.keys.get(&relation).unwrap();
+                let keys = relation_cache
+                    .keys
+                    .get(&relation)
+                    .ok_or_else(|| SinkError::UnknownRelation(relation))?;
                 Ok(e.insert(
                     DeleteStatement::new(
                         client,
-                        relation_cache.table_names.get(relation).unwrap(),
+                        relation_cache
+                            .table_names
+                            .get(relation)
+                            .ok_or_else(|| SinkError::UnknownRelation(relation))?,
                         keys.as_slice(),
                     )
-                    .await?,
+                    .await
+                    .map_err(|e| SinkError::Platform(e.to_string()))?,
                 )
                 .clone())
             }
@@ -126,7 +141,7 @@ impl UpsertStatementCache {
         rel: u32,
         relation_cache: &RelationCache,
         arena: &Bump,
-    ) -> Result<UpsertStatement, tokio_postgres::Error> {
+    ) -> Result<UpsertStatement, SinkError> {
         use std::collections::hash_map::Entry;
 
         match self.0.entry(rel) {
@@ -135,11 +150,15 @@ impl UpsertStatementCache {
                 .insert(
                     UpsertStatement::new(
                         client,
-                        relation_cache.table_names.get(rel).unwrap(),
+                        relation_cache
+                            .table_names
+                            .get(rel)
+                            .ok_or_else(|| SinkError::UnknownRelation(rel))?,
                         &relation_cache.fields[&rel],
                         &relation_cache.keys[&rel],
                     )
-                    .await?,
+                    .await
+                    .map_err(|e| SinkError::Platform(e.to_string()))?,
                 )
                 .clone()),
         }

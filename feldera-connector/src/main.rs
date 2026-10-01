@@ -5,7 +5,7 @@ use cdc_avro::{
     PgValue, Relation,
     owned::{ChangeEvent, Op},
 };
-use cdc_sink::{KafkaConfig, KafkaSink};
+use cdc_sink::{KafkaConfig, KafkaSink, SinkError};
 use cdc_sink::{MetricsConfig, TableNames};
 use config::Config;
 use feldera_rest_api::Client;
@@ -114,15 +114,20 @@ impl FelderaConnector {
     }
 }
 impl KafkaSink for FelderaConnector {
-    async fn on_event<'a>(&mut self, event: ChangeEvent<'a>) -> Result<(), String> {
-        self.insert_batch(self.table_names.get(event.rel).unwrap(), vec![event])
-            .await
-            .map_err(|e| e.to_string())?;
+    async fn on_event<'a>(&mut self, event: ChangeEvent<'a>) -> Result<(), SinkError> {
+        self.insert_batch(
+            self.table_names
+                .get(event.rel)
+                .ok_or_else(|| SinkError::UnknownRelation(event.rel))?,
+            vec![event],
+        )
+        .await
+        .map_err(|e| SinkError::Platform(e.to_string()))?;
 
         Ok(())
     }
 
-    async fn on_relation(&mut self, relation: Relation) -> Result<(), String> {
+    async fn on_relation(&mut self, relation: Relation) -> Result<(), SinkError> {
         self.table_names
             .insert(relation.relation_oid, relation.name);
 

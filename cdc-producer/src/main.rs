@@ -7,10 +7,11 @@ use bumpalo::Bump;
 use cdc_avro::{Relation, arena::ChangeEvent};
 use cdc_wal_reader::Producer as CdcProducer;
 use futures_util::stream::StreamExt;
-use rdkafka::admin::{AdminClient, AdminOptions, NewTopic, ResourceSpecifier, TopicReplication};
+use rdkafka::admin::{AdminClient, AdminOptions, NewTopic, TopicReplication};
 use rdkafka::client::DefaultClientContext;
 use rdkafka::config::RDKafkaLogLevel;
 use rdkafka::consumer::{Consumer, StreamConsumer};
+use rdkafka::error::KafkaError;
 use rdkafka::producer::{FutureProducer, FutureRecord, Producer};
 use rdkafka::util::Timeout;
 use rdkafka::{ClientConfig, Message};
@@ -175,18 +176,26 @@ async fn read_lsn(kafka_config: &KafkaConfig) -> Result<u64, rdkafka::error::Kaf
 
     consumer.subscribe(&[&format!("{}.lsn", &kafka_config.topic)])?;
 
-    match tokio::time::timeout(Duration::from_millis(500), consumer.stream().next()).await {
-        Ok(Some(Ok(msg))) => Ok(u64::from_be_bytes(
-            msg.payload_view::<[u8]>()
-                .unwrap()
-                .unwrap()
-                .try_into()
-                .unwrap(),
-        )),
-        Ok(Some(Err(e))) => return Err(e),
-        Ok(None) | Err(_) => {
-            println!("Lsn read timeout starting from 0");
-            Ok(0)
+    // Loop and wait a bit until either a valid message is obtained or the timeout
+    // activates and just start from 0
+    loop {
+        match tokio::time::timeout(Duration::from_millis(500), consumer.stream().next()).await {
+            Ok(Some(Ok(msg))) => match msg.payload_view::<[u8]>() {
+                Some(Ok(lsn_bytes)) => match lsn_bytes.try_into() {
+                    Ok(lsn_slice) => return Ok(u64::from_be_bytes(lsn_slice)),
+                    Err(_) => {}
+                },
+                Some(Err(())) => {
+                    // This shouldn't fail
+                    panic!("");
+                }
+                None => {}
+            },
+            Ok(Some(Err(e))) => return Err(e),
+            Ok(None) | Err(_) => {
+                println!("Lsn read timeout starting from 0");
+                return Ok(0);
+            }
         }
     }
 }
@@ -197,11 +206,10 @@ async fn ensure_topic(
     partitions: i32,
     replication: i32,
     compact: bool,
-) -> Result<(), String> {
+) -> Result<(), KafkaError> {
     let metadata = admin
         .inner()
-        .fetch_metadata(Some(topic), Duration::from_secs(5))
-        .map_err(|e| e.to_string())?;
+        .fetch_metadata(Some(topic), Duration::from_secs(5))?;
 
     if metadata.topics().is_empty() || metadata.topics()[0].partitions().is_empty() {
         let mut new_topic = NewTopic::new(topic, partitions, TopicReplication::Fixed(replication));
@@ -213,8 +221,7 @@ async fn ensure_topic(
                 &[new_topic],
                 &AdminOptions::new().request_timeout(Some(Duration::from_secs(5))),
             )
-            .await
-            .map_err(|e| e.to_string())?;
+            .await?;
 
         return Ok(());
     }
@@ -222,15 +229,12 @@ async fn ensure_topic(
     Ok(())
 }
 
-async fn check_topics(kafka_config: &KafkaConfig) -> Result<(), ()> {
+async fn check_topics(kafka_config: &KafkaConfig) -> Result<(), KafkaError> {
     let admin: AdminClient<DefaultClientContext> = ClientConfig::new()
         .set("bootstrap.servers", &kafka_config.brokers)
-        .create()
-        .unwrap();
+        .create()?;
 
-    ensure_topic(&admin, &format!("{}.lsn", &kafka_config.topic), 1, 1, true)
-        .await
-        .unwrap();
+    ensure_topic(&admin, &format!("{}.lsn", &kafka_config.topic), 1, 1, true).await?;
 
     ensure_topic(
         &admin,
@@ -239,8 +243,7 @@ async fn check_topics(kafka_config: &KafkaConfig) -> Result<(), ()> {
         1,
         true,
     )
-    .await
-    .unwrap();
+    .await?;
 
     Ok(())
 }

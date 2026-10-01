@@ -3,11 +3,10 @@ use cdc_avro::{
     Field, PgValue, Relation, ReplicaKind,
     owned::{ChangeEvent, Op},
 };
-use cdc_sink::{KafkaConfig, KafkaSink, MetricsConfig, TableNames};
+use cdc_sink::{KafkaConfig, KafkaSink, MetricsConfig, SinkError, TableNames};
 use config::Config;
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
-use thiserror::Error;
 use tokio_postgres::{
     Connection, NoTls, Socket,
     tls::NoTlsStream,
@@ -47,12 +46,6 @@ async fn main() {
                 .expect("Failed to connect to postgres"),
         )
         .await;
-}
-
-#[derive(Debug, Error)]
-enum BridgeError {
-    #[error("Found unknown relation oid")]
-    UnknowRelation,
 }
 
 #[derive(Deserialize)]
@@ -108,7 +101,7 @@ impl PostgresSink {
         })
     }
 
-    async fn perform_op<'a>(&'a mut self, event: ChangeEvent<'a>) -> Result<(), BridgeError> {
+    async fn perform_op<'a>(&'a mut self, event: ChangeEvent<'a>) -> Result<(), SinkError> {
         match event.op {
             Op::Insert { row } => {
                 let insert_stmt = self
@@ -119,8 +112,7 @@ impl PostgresSink {
                         &self.relation_cache.fields,
                         &self.relation_cache.table_names,
                     )
-                    .await
-                    .expect("Failed to generate insert statement");
+                    .await?;
                 {
                     let keys: bumpalo::collections::Vec<'_, ToSqlWrapper> = row
                         .into_iter()
@@ -142,8 +134,7 @@ impl PostgresSink {
                 let update_stmt = self
                     .upsert_stmt_cache
                     .get(&self.client, event.rel, &self.relation_cache, &self.arena)
-                    .await
-                    .unwrap();
+                    .await?;
 
                 let keys = extract_keys(&self.arena, row);
 
@@ -160,8 +151,7 @@ impl PostgresSink {
                 let delete_stmt = self
                     .delete_stmt_cache
                     .get(&self.client, event.rel, &self.relation_cache, &self.arena)
-                    .await
-                    .expect("Failed to generate insert statement");
+                    .await?;
 
                 let key_identity = self.relation_cache.identities.get(&event.rel);
 
@@ -181,7 +171,7 @@ impl PostgresSink {
                                 }
                             })
                             .collect(),
-                        None => return Err(BridgeError::UnknowRelation),
+                        None => return Err(SinkError::UnknownRelation(event.rel)),
                     };
 
                     if let Err(e) = self
@@ -205,13 +195,13 @@ impl PostgresSink {
 }
 
 impl KafkaSink for PostgresSink {
-    async fn on_event<'a>(&mut self, event: ChangeEvent<'a>) -> Result<(), String> {
-        self.perform_op(event).await.map_err(|e| e.to_string())?;
+    async fn on_event<'a>(&mut self, event: ChangeEvent<'a>) -> Result<(), SinkError> {
+        self.perform_op(event).await?;
 
         Ok(())
     }
 
-    async fn on_relation(&mut self, relation: Relation) -> Result<(), String> {
+    async fn on_relation(&mut self, relation: Relation) -> Result<(), SinkError> {
         self.relation_cache.update(relation);
 
         Ok(())
