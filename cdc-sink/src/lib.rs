@@ -133,7 +133,7 @@ impl KafkaClient {
     }
 
     pub async fn consume_from_kafka<S: KafkaSink>(&self, mut sink: S) {
-        let topic = format!("{}.events.*", self.topic.as_str());
+        let topic = format!("^{}\\.events\\.*", self.topic.as_str());
         let rel_topic = format!("{}.relations", self.topic);
 
         self.consumer
