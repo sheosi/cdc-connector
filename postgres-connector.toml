@@ -8,5 +8,5 @@ port = 5401
 [kafka]
 brokers=""
 topic="example-topic"
-key="miau"
+key="default"
 group_id="default"

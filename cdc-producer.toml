@@ -11,4 +11,4 @@ port = 5400
 [kafka]
 brokers="localhost:9092"
 topic="example-topic"
-key="miau"
+key="default"

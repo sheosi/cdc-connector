@@ -103,6 +103,7 @@ impl PostgresSink {
     }
 
     async fn perform_op<'a>(&'a mut self, event: ChangeEvent<'a>) -> Result<(), SinkError> {
+        println!("Got event: {:?}", &event);
         match event.op {
             Op::Insert { row } => {
                 let insert_stmt = self
@@ -114,6 +115,9 @@ impl PostgresSink {
                         &self.relation_cache.table_names,
                     )
                     .await?;
+
+                // Confine this block to confine the reference to the arena
+                // so that it can be reset later.
                 {
                     let keys: bumpalo::collections::Vec<'_, ToSqlWrapper> = row
                         .into_iter()
@@ -137,15 +141,21 @@ impl PostgresSink {
                     .get(&self.client, event.rel, &self.relation_cache, &self.arena)
                     .await?;
 
-                let keys = extract_keys(&self.arena, row);
-
-                if let Err(e) = self
-                    .client
-                    .execute(&update_stmt.stmt, &extract_keys_ref(&self.arena, &keys))
-                    .await
+                // Confine this block to confine the reference to the arena
+                // so that it can be reset later.
                 {
-                    eprintln!("{:?}", e);
+                    let keys = extract_keys(&self.arena, row);
+
+                    if let Err(e) = self
+                        .client
+                        .execute(&update_stmt.stmt, &extract_keys_ref(&self.arena, &keys))
+                        .await
+                    {
+                        eprintln!("{:?}", e);
+                    }
                 }
+
+                self.arena.reset();
             }
 
             Op::Delete { old } => {
@@ -156,6 +166,8 @@ impl PostgresSink {
 
                 let key_identity = self.relation_cache.identities.get(&event.rel);
 
+                // Confine this block to confine the reference to the arena
+                // so that it can be reset later.
                 {
                     let keys: Vec<ToSqlWrapper> = match key_identity {
                         Some(RelationIdentity::Full) => {

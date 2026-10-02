@@ -48,12 +48,14 @@ impl KafkaProducer {
 
 impl CdcProducer for KafkaProducer {
     async fn start_transaction(&self) -> Result<(), String> {
+        println!("Start tr");
         self.inner.begin_transaction().map_err(|e| e.to_string())?;
 
         Ok(())
     }
 
     async fn send<'a>(&self, relation: &Relation, event: ChangeEvent<'a>) -> Result<(), String> {
+        println!("Sending");
         let payload = event.into_avro().map_err(|e| e.to_string())?;
         let topic = format!(
             "{}.events.{}.{}",
@@ -71,6 +73,7 @@ impl CdcProducer for KafkaProducer {
     }
 
     async fn on_relation(&mut self, relation: &Relation) -> std::prelude::v1::Result<(), String> {
+        println!("Rel");
         let relation_bin = relation.into_avro().map_err(|e| e.to_string())?;
 
         let rel_topic = format!("{}.relations", self.topic);
@@ -89,6 +92,7 @@ impl CdcProducer for KafkaProducer {
     }
 
     async fn commit_transaction(&self, lsn: u64) -> std::prelude::v1::Result<(), String> {
+        println!("End tr");
         let lsn_payload = lsn.to_be_bytes();
 
         let lsn_future_record = FutureRecord::to(&self.lsn_topic)

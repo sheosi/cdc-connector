@@ -95,7 +95,7 @@ services:
 #       CDC_PROD_POSTGRES_PORT = 5400
 #       CDC_PROD_KAFKA_BROKERS = "localhost:9092"
 #       CDC_PROD_KAFKA_TOPIC = "example-topic"
-#       CDC_PROD_KAFKA_KEY = "miau"
+#       CDC_PROD_KAFKA_KEY = "default"
 #
 #     build:
 #       context: .
@@ -119,7 +119,7 @@ services:
 #       PG_CONN_POSTGRES_PORT = 5401
 #       PG_CONN_KAFKA_BROKERS = ""
 #       PG_CONN_KAFKA_TOPIC = "example-topic"
-#       PG_CONN_KAFKA_KEY = "miau"
+#       PG_CONN_KAFKA_KEY = "default"
 #       PG_CONN_KAFKA_GROUP_ID = "default"
 #
 #     build:
@@ -139,7 +139,7 @@ services:
 #     environment:
 #       FELD_CONN_KAFKA_BROKERS = ""
 #       FELD_CONN_KAFKA_TOPIC = "example-topic"
-#       FELD_CONN_KAFKA_KEY = "miau"
+#       FELD_CONN_KAFKA_KEY = "default"
 #       FELD_CONN_KAFKA_GROUP_ID = "default"
 #       FELD_CONN_FELDERA_URL = ""
 #       FELD_CONN_FELDERA_PIPELINE = ""

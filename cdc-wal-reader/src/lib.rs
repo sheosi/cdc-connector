@@ -121,16 +121,14 @@ pub async fn start_wal_input<P: Producer>(
                         }
                     },
                     b'I' => {
-                        println!("XLogData wal_end={} bytes={:?}", wal_end, &data);
-
                         // If not in a transaction because it was aborted, skip treating this
                         if currently_in_transaction {
-                            send_to_producer(
-                                decoder::insert::parse(&data, &relation_map, &arena),
-                                &producer,
-                                &mut currently_in_transaction,
-                            )
-                            .await;
+                            let insert = decoder::insert::parse(&data, &relation_map, &arena);
+
+                            println!("Got insert: {:?}", insert);
+
+                            send_to_producer(insert, &producer, &mut currently_in_transaction)
+                                .await;
                         }
                     }
                     b'D' => {
