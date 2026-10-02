@@ -19,3 +19,13 @@ BEGIN
         CREATE PUBLICATION cdc_pub FOR TABLE users;
     END IF;
 END $$;
+
+-- 4. As an example let's fill this database with example data
+INSERT INTO users (name, email)
+SELECT name, email
+FROM (VALUES
+    ('Ada Lovelace', 'ada@example.com'),
+    ('Grace Hopper', 'grace@example.com'),
+    ('Alan Turing', 'alan@example.com')
+) As seed(name, email)
+WHERE NOT EXISTS (SELECT 1 FROM users);

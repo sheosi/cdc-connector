@@ -193,7 +193,7 @@ async fn read_lsn(kafka_config: &KafkaConfig) -> Result<u64, rdkafka::error::Kaf
             },
             Ok(Some(Err(e))) => return Err(e),
             Ok(None) | Err(_) => {
-                println!("Lsn read timeout starting from 0");
+                println!("Lsn read timeout: starting from 0");
                 return Ok(0);
             }
         }
