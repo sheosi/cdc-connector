@@ -106,8 +106,8 @@ pub async fn start_wal_input<P: Producer>(
                 }
 
                 match data[0] {
-                    b'R' => {
-                        if let Ok(relation) = RelationData::parse(data) {
+                    b'R' => match RelationData::parse(data) {
+                        Ok(relation) => {
                             println!("{:?}", &relation);
 
                             if let Err(e) = producer.on_relation(&relation.inner).await {
@@ -116,7 +116,10 @@ pub async fn start_wal_input<P: Producer>(
 
                             relation_map.insert(relation.inner.relation_oid, relation);
                         }
-                    }
+                        Err(e) => {
+                            eprintln!("Failed to parse Relation: {}", e)
+                        }
+                    },
                     b'I' => {
                         println!("XLogData wal_end={} bytes={:?}", wal_end, &data);
 

@@ -49,8 +49,8 @@ impl RelationData {
 
         let replica_id_pos = 5 + namespace.len() + 1 + relname.len() + 1;
         let replica_id = match data[replica_id_pos] {
-            0 => ReplicaKind::Keys,
-            2 => ReplicaKind::Row,
+            b'd' => ReplicaKind::Keys,
+            b'f' => ReplicaKind::Row,
             a => return Err(DecoderError::WrongReplicaId(a)),
         };
 
