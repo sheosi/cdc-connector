@@ -142,6 +142,7 @@ impl KafkaClient {
 
         let mut stream = self.consumer.stream();
         while let Some(result) = stream.next().await {
+            println!("Got message");
             match result {
                 Ok(borrowed_message) => {
                     if let Some(ts) = borrowed_message.timestamp().to_millis() {
@@ -253,4 +254,8 @@ impl TableNames {
     pub fn get(&self, rel_oid: u32) -> Option<&str> {
         self.0.get(&rel_oid).map(|s| s.as_str())
     }
+}
+
+pub fn init_logs() {
+    tracing_subscriber::fmt::init();
 }

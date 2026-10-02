@@ -644,6 +644,8 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "tokio-postgres",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -2716,6 +2718,7 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "tokio-postgres",
+ "tracing",
 ]
 
 [[package]]

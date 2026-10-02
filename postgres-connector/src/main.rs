@@ -19,6 +19,8 @@ mod statements;
 
 #[tokio::main]
 async fn main() {
+    cdc_sink::init_logs();
+
     let config: BridgeConfig = Config::builder()
         .add_source(config::File::with_name("postgres-connector").required(false))
         .add_source(config::Environment::with_prefix("PG_CONN").separator("_"))
@@ -101,8 +103,10 @@ impl PostgresSink {
             arena: Bump::with_capacity(2048),
         })
     }
+}
 
-    async fn perform_op<'a>(&'a mut self, event: ChangeEvent<'a>) -> Result<(), SinkError> {
+impl KafkaSink for PostgresSink {
+    async fn on_event<'a>(&mut self, event: ChangeEvent<'a>) -> Result<(), SinkError> {
         println!("Got event: {:?}", &event);
         match event.op {
             Op::Insert { row } => {
@@ -202,14 +206,6 @@ impl PostgresSink {
                 self.arena.reset()
             }
         }
-
-        Ok(())
-    }
-}
-
-impl KafkaSink for PostgresSink {
-    async fn on_event<'a>(&mut self, event: ChangeEvent<'a>) -> Result<(), SinkError> {
-        self.perform_op(event).await?;
 
         Ok(())
     }
