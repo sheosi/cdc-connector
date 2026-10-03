@@ -79,7 +79,6 @@ fn default_publication() -> String {
 pub async fn start_wal_input<P: Producer>(
     own_config: PostgresConfig,
     last_lsn: u64,
-    replica_identity_full: bool,
     mut producer: P,
 ) -> Result<(), StartWalInputError> {
     let pg_config = ReplicationConfig::new(
@@ -93,7 +92,6 @@ pub async fn start_wal_input<P: Producer>(
     .with_start_lsn(Lsn(last_lsn))
     .with_port(own_config.port);
 
-    configure_replica_identity(&pg_config, replica_identity_full).await?;
     let mut client = ReplicationClient::connect(pg_config).await?;
 
     let arena = Bump::with_capacity(1024);
@@ -232,22 +230,24 @@ pub async fn start_wal_input<P: Producer>(
     Ok(())
 }
 
-async fn configure_replica_identity(
-    config: &ReplicationConfig,
+pub async fn configure_replica_identity(
+    config: &PostgresConfig,
     replica_identity_full: bool,
-) -> Result<(), StartWalInputError> {
+) -> Result<Vec<DbTopic>, StartWalInputError> {
     let pg_config = tokio_postgres::Config::new()
         .host(&config.host)
         .port(config.port)
         .user(&config.user)
         .password(&config.password)
-        .dbname(&config.database)
+        .dbname(&config.dbname)
         .to_owned();
 
     let (clt, connection) = pg_config.connect(NoTls).await?;
     tokio::spawn(connection);
 
-    let pub_names: Vec<String> = config.publication.names().to_vec();
+    // Right now not needed, but since we were already accounting for multiple
+    // publications let's keep the design to make it easier for a possible change
+    let pub_names: Vec<String> = vec![config.publication.clone()];
 
     let identity = if replica_identity_full {
         "FULL"
@@ -264,19 +264,28 @@ async fn configure_replica_identity(
         )
         .await?;
 
+    let mut result = Vec::new();
+
     for row in rows {
         let schema: String = row.get(0);
         let table: String = row.get(1);
-        let fullname = format!("{}.{}", schema, table);
 
         clt.execute(
-            &format!("ALTER TABLE {} REPLICA IDENTITY {}", fullname, identity),
+            &format!(
+                "ALTER TABLE {}.{} REPLICA IDENTITY {}",
+                schema, table, identity
+            ),
             &[],
         )
         .await?;
+
+        result.push(DbTopic {
+            name: table,
+            namespace: schema,
+        });
     }
 
-    Ok(())
+    Ok(result)
 }
 
 pub trait Producer: Send {
@@ -296,6 +305,11 @@ pub trait Producer: Send {
     -> impl std::future::Future<Output = Result<(), String>>;
 
     fn abort_transaction(&self) -> impl std::future::Future<Output = Result<(), String>>;
+}
+
+pub struct DbTopic {
+    pub name: String,
+    pub namespace: String,
 }
 
 #[derive(Debug, Error)]

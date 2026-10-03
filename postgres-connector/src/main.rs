@@ -12,7 +12,6 @@ use tokio_postgres::{
     tls::NoTlsStream,
     types::{IsNull, ToSql},
 };
-use tracing::error;
 
 use crate::statements::{DeleteStatementCache, InsertStatementCache, UpsertStatementCache};
 
@@ -84,7 +83,6 @@ pub struct PostgresSink {
     upsert_stmt_cache: UpsertStatementCache,
     delete_stmt_cache: DeleteStatementCache,
     relation_cache: RelationCache,
-    arena: Bump,
 }
 
 impl PostgresSink {
@@ -101,13 +99,16 @@ impl PostgresSink {
             upsert_stmt_cache: UpsertStatementCache::new(),
             delete_stmt_cache: DeleteStatementCache::new(),
             relation_cache: RelationCache::from_rels(&relations),
-            arena: Bump::with_capacity(2048),
         })
     }
 }
 
 impl KafkaSink for PostgresSink {
-    async fn on_event<'a>(&mut self, event: ChangeEvent<'a>) -> Result<(), SinkError> {
+    async fn on_event<'a>(
+        &mut self,
+        event: ChangeEvent<'a>,
+        arena: &Bump,
+    ) -> Result<(), SinkError> {
         println!("Got event: {:?}", &event);
         match event.op {
             Op::Insert { row } => {
@@ -124,43 +125,37 @@ impl KafkaSink for PostgresSink {
                 // Confine this block to confine the reference to the arena
                 // so that it can be reset later.
                 {
-                    let keys: bumpalo::collections::Vec<'_, ToSqlWrapper> = row
-                        .into_iter()
-                        .map(|v| ToSqlWrapper(v))
-                        .collect_in(&self.arena);
+                    let keys: bumpalo::collections::Vec<'_, ToSqlWrapper> =
+                        row.into_iter().map(|v| ToSqlWrapper(v)).collect_in(arena);
 
                     self.client
-                        .execute(&insert_stmt.stmt, &extract_keys_ref(&self.arena, &keys))
+                        .execute(&insert_stmt.stmt, &extract_keys_ref(&arena, &keys))
                         .await
                         .map_err(|e| SinkError::Platform(e.to_string()))?;
                 }
-
-                self.arena.reset();
             }
             Op::Update { old: _, row } => {
                 let update_stmt = self
                     .upsert_stmt_cache
-                    .get(&self.client, event.rel, &self.relation_cache, &self.arena)
+                    .get(&self.client, event.rel, &self.relation_cache, &arena)
                     .await?;
 
                 // Confine this block to confine the reference to the arena
                 // so that it can be reset later.
                 {
-                    let keys = extract_keys(&self.arena, row);
+                    let keys = extract_keys(&arena, row);
 
                     self.client
-                        .execute(&update_stmt.stmt, &extract_keys_ref(&self.arena, &keys))
+                        .execute(&update_stmt.stmt, &extract_keys_ref(&arena, &keys))
                         .await
                         .map_err(|e| SinkError::Platform(e.to_string()))?;
                 }
-
-                self.arena.reset();
             }
 
             Op::Delete { old } => {
                 let delete_stmt = self
                     .delete_stmt_cache
-                    .get(&self.client, event.rel, &self.relation_cache, &self.arena)
+                    .get(&self.client, event.rel, &self.relation_cache, &arena)
                     .await?;
 
                 let key_identity = self.relation_cache.identities.get(&event.rel);
@@ -189,13 +184,11 @@ impl KafkaSink for PostgresSink {
                     self.client
                         .execute(
                             &delete_stmt.stmt,
-                            &extract_keys_ref(&self.arena, &keys).as_slice(),
+                            &extract_keys_ref(&arena, &keys).as_slice(),
                         )
                         .await
                         .map_err(|e| SinkError::Platform(e.to_string()))?;
                 }
-
-                self.arena.reset()
             }
         }
 

@@ -5,7 +5,7 @@ use anyhow::Result;
 
 use bumpalo::Bump;
 use cdc_avro::{Relation, arena::ChangeEvent};
-use cdc_wal_reader::Producer as CdcProducer;
+use cdc_wal_reader::{DbTopic, Producer as CdcProducer};
 use futures_util::stream::StreamExt;
 use rdkafka::admin::{AdminClient, AdminOptions, NewTopic, TopicReplication};
 use rdkafka::client::DefaultClientContext;
@@ -233,7 +233,10 @@ async fn ensure_topic(
     Ok(())
 }
 
-async fn check_topics(kafka_config: &KafkaConfig) -> Result<(), KafkaError> {
+async fn check_topics(
+    kafka_config: &KafkaConfig,
+    db_topics: Vec<DbTopic>,
+) -> Result<(), KafkaError> {
     let admin: AdminClient<DefaultClientContext> = ClientConfig::new()
         .set("bootstrap.servers", &kafka_config.brokers)
         .create()?;
@@ -248,6 +251,20 @@ async fn check_topics(kafka_config: &KafkaConfig) -> Result<(), KafkaError> {
         true,
     )
     .await?;
+
+    for db_topic in db_topics {
+        ensure_topic(
+            &admin,
+            &format!(
+                "{}.events.{}.{}",
+                &kafka_config.topic, &db_topic.namespace, &db_topic.name
+            ),
+            1,
+            1,
+            false,
+        )
+        .await?;
+    }
 
     Ok(())
 }
@@ -295,7 +312,13 @@ async fn main() -> Result<()> {
         "The lag introduced by Kafka, in seconds"
     );
 
-    check_topics(&own_config.kafka)
+    let db_names = cdc_wal_reader::configure_replica_identity(
+        &own_config.postgres,
+        own_config.will_connect_to_feldera,
+    )
+    .await?;
+
+    check_topics(&own_config.kafka, db_names)
         .await
         .expect("Failed to setup topics");
 
@@ -306,7 +329,6 @@ async fn main() -> Result<()> {
     cdc_wal_reader::start_wal_input(
         own_config.postgres,
         lsn,
-        own_config.will_connect_to_feldera,
         KafkaProducer::new(&own_config.kafka)
             .await
             .expect("Failed to init kafka"),

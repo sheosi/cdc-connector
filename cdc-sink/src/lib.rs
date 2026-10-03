@@ -80,6 +80,7 @@ pub trait KafkaSink {
     fn on_event<'a>(
         &mut self,
         event: ChangeEvent<'a>,
+        arena: &Bump,
     ) -> impl std::future::Future<Output = Result<(), SinkError>>;
 
     fn on_relation(
@@ -146,6 +147,8 @@ impl KafkaClient {
             .subscribe(&vec![topic.as_str(), rel_topic.as_str()])
             .expect("Can't subscribe to specified topics");
 
+        let mut arena = Bump::with_capacity(4096);
+
         let mut stream = self.consumer.stream();
         while let Some(result) = stream.next().await {
             tracing::info!("Got message");
@@ -175,7 +178,7 @@ impl KafkaClient {
                                     let op_str = event.op.op_str();
 
                                     // This is written a little bit awkward but
-                                    if let Err(e) = sink.on_event(event).await {
+                                    if let Err(e) = sink.on_event(event, &arena).await {
                                         error!(?e, "Error while sending event to platform");
                                     } else if let Err(e) = self.consumer.commit_message(
                                         &borrowed_message,
@@ -216,6 +219,8 @@ impl KafkaClient {
                 Err(e) => error!(error = ?e, "Kafka error"),
             }
         }
+
+        arena.reset();
     }
 }
 
