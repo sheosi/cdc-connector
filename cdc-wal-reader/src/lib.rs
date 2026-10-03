@@ -59,6 +59,7 @@ pub struct PostgresConfig {
     user: String,
     password: String,
     slot_name: String,
+    dbname: String,
 
     #[serde(default = "default_port")]
     port: u16,
@@ -85,7 +86,7 @@ pub async fn start_wal_input<P: Producer>(
         own_config.host,
         own_config.user,
         own_config.password,  // host, user, password
-        "cdc",                // dbname
+        own_config.dbname,    // dbname
         own_config.slot_name, // slot name
         own_config.publication,
     )
