@@ -23,7 +23,7 @@ async fn main() {
     cdc_sink::init_logs();
 
     let config: BridgeConfig = Config::builder()
-        .add_source(config::File::with_name("postgres-connector").required(false))
+        .add_source(config::File::with_name("config/postgres-connector").required(false))
         .add_source(config::Environment::with_prefix("PG_CONN").separator("_"))
         .build()
         .expect("Failed to find postgres-connect config")

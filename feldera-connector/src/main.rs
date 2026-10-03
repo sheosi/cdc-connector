@@ -140,7 +140,7 @@ async fn main() {
     cdc_sink::init_logs();
 
     let config: BridgeConfig = Config::builder()
-        .add_source(config::File::with_name("feldera-connector").required(false))
+        .add_source(config::File::with_name("config/feldera-connector").required(false))
         .add_source(config::Environment::with_prefix("FELD_CONN").separator("_"))
         .build()
         .expect("Failed to load feldera-connector config")

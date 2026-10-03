@@ -255,7 +255,7 @@ async fn check_topics(kafka_config: &KafkaConfig) -> Result<(), KafkaError> {
 #[tokio::main]
 async fn main() -> Result<()> {
     let own_config: ProducerConfig = config::Config::builder()
-        .add_source(config::File::with_name("cdc-producer").required(false))
+        .add_source(config::File::with_name("config/cdc-producer").required(false))
         .add_source(config::Environment::with_prefix("CDC_PROD").separator("_"))
         .build()
         .expect("Failed to find cdc-producer config")
