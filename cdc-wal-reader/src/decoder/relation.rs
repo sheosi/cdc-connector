@@ -267,8 +267,8 @@ mod test {
             b'R', // Relation
             0, 0, 0, 1, // Relation OID
             b'p', b'u', b'b', b'l', b'i', b'c', 0, // Namespace
-            b'u', b's', b'e', b'r', b's', 0, // Relation name
-            0, // Replica identity setting
+            b'u', b's', b'e', b'r', b's', 0,    // Relation name
+            b'd', // Replica identity setting
             0, 1, // Number of columns
             // Column 1
             1, // Flags: Is key
@@ -385,8 +385,8 @@ mod test {
             b'R', // Relation
             0, 0, 0, 1, // Relation OID
             b'p', b'u', b'b', b'l', b'i', b'c', 0, // Namespace
-            b'u', b's', b'e', b'r', b's', 0, // Relation name
-            0, // Replica identity setting
+            b'u', b's', b'e', b'r', b's', 0,    // Relation name
+            b'd', // Replica identity setting
             0, 1, // Number of columns
         ]);
 
@@ -401,8 +401,8 @@ mod test {
             b'R', // Relation
             0, 0, 0, 1, // Relation OID
             b'p', b'u', b'b', b'l', b'i', b'c', 0, // Namespace
-            b'u', b's', b'e', b'r', b's', 0, // Relation name
-            0, // Replica identity setting
+            b'u', b's', b'e', b'r', b's', 0,    // Relation name
+            b'd', // Replica identity setting
             0, 1, // Number of columns
             // Column 1
             1, // Flags: Is key
@@ -419,8 +419,8 @@ mod test {
             b'R', // Relation
             0, 0, 0, 1, // Relation OID
             b'p', b'u', b'b', b'l', b'i', b'c', 0, // Namespace
-            b'u', b's', b'e', b'r', b's', 0, // Relation name
-            0, // Replica identity setting
+            b'u', b's', b'e', b'r', b's', 0,    // Relation name
+            b'd', // Replica identity setting
             0, 1, // Number of columns
             // Column 1
             1, // Flags: Is key
@@ -438,8 +438,8 @@ mod test {
             b'R', // Relation
             0, 0, 0, 1, // Relation OID
             b'p', b'u', b'b', b'l', b'i', b'c', 0, // Namespace
-            b'u', b's', b'e', b'r', b's', 0, // Relation name
-            0, // Replica identity setting
+            b'u', b's', b'e', b'r', b's', 0,    // Relation name
+            b'd', // Replica identity setting
             0, 1, // Number of columns
             // Column 1
             1, // Flags: Is key
@@ -457,8 +457,8 @@ mod test {
             b'R', // Relation
             0, 0, 0, 1, // Relation OID
             b'p', b'u', b'b', b'l', b'i', b'c', 0, // Namespace
-            b'u', b's', b'e', b'r', b's', 0, // Relation name
-            0, // Replica identity setting
+            b'u', b's', b'e', b'r', b's', 0,    // Relation name
+            b'd', // Replica identity setting
             0, 1, // Number of columns
             // Column 1
             1, // Flags: Is key
@@ -477,8 +477,8 @@ mod test {
             b'R', // Relation
             0, 0, 0, 1, // Relation OID
             b'p', b'u', b'b', b'l', b'i', b'c', 0, // Namespace
-            b'u', b's', b'e', b'r', b's', 0, // Relation name
-            0, // Replica identity setting
+            b'u', b's', b'e', b'r', b's', 0,    // Relation name
+            b'd', // Replica identity setting
             0, 1, // Number of columns
             // Column 1
             1, // Flags: Is key
