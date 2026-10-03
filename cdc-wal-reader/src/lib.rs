@@ -9,6 +9,7 @@ pub use pgwire_replication::ReplicationConfig;
 use serde::Deserialize;
 use thiserror::Error;
 use tokio_postgres::NoTls;
+use tracing::{debug, error, warn};
 
 use crate::decoder::{DecoderError, relation::RelationData};
 
@@ -35,19 +36,19 @@ async fn send_to_producer<'a, P>(
                 .increment(1);
 
             if let Err(e) = producer.send(&relation.inner, event).await {
-                eprintln!("Producer had an error {}, aborting transaction", e);
+                error!(error = e, "Kafka error");
 
                 metrics::counter!("cdc_produce_errors_total", "stage" => "send").increment(1);
 
                 if let Err(e) = producer.abort_transaction().await {
-                    eprintln!("Failed to abort transaction {:?}", e);
+                    error!(error = ?e, "Failed to abort transaction");
                 }
 
                 *currently_in_transaction = false;
             }
         }
         Err(e) => {
-            eprintln!("Failed to decode input {}", e);
+            error!(error = e.to_string(), "Failed to decode input ");
         }
     }
 }
@@ -102,7 +103,7 @@ pub async fn start_wal_input<P: Producer>(
         match ev {
             ReplicationEvent::XLogData { wal_end, data, .. } => {
                 if data.len() == 0 {
-                    eprintln!("Data empty!")
+                    debug!("Got empty data")
                 }
 
                 match data[0] {
@@ -111,13 +112,13 @@ pub async fn start_wal_input<P: Producer>(
                             println!("{:?}", &relation);
 
                             if let Err(e) = producer.on_relation(&relation.inner).await {
-                                eprintln!("Failed to send relation: {}", e);
+                                error!(error = e, "Failed to send relation");
                             }
 
                             relation_map.insert(relation.inner.relation_oid, relation);
                         }
                         Err(e) => {
-                            eprintln!("Failed to parse Relation: {}", e)
+                            error!(error = e.to_string(), "Failed to parse Relation")
                         }
                     },
                     b'I' => {
@@ -168,18 +169,18 @@ pub async fn start_wal_input<P: Producer>(
                 commit_time_micros: _,
             } => {
                 if currently_in_transaction {
-                    eprintln!(
+                    warn!(
                         "Already in a transaction but asked for a new one, let's abort the old one"
                     );
                     if let Err(e) = producer.abort_transaction().await {
-                        eprintln!("Failed to abort transaction: {:?}", e);
+                        error!(error = ?e, "Failed to abort transaction");
                     }
                 } else {
                     currently_in_transaction = true;
                 }
 
                 if let Err(e) = producer.start_transaction().await {
-                    eprintln!("Failed to start transaction: {:?}", e);
+                    error!(error = ?e, "Failed to start transaction");
                 }
             }
             ReplicationEvent::Commit {
@@ -191,7 +192,7 @@ pub async fn start_wal_input<P: Producer>(
                 if currently_in_transaction {
                     currently_in_transaction = false;
                     if let Err(e) = producer.commit_transaction(end_lsn.0).await {
-                        eprintln!("Failed to commit transaction: {:?}", e);
+                        error!(error = ?e, "Failed to commit transaction");
 
                         metrics::counter!("cdc_produce_errors_total", "stage" => "commit")
                             .increment(1);
@@ -223,7 +224,7 @@ pub async fn start_wal_input<P: Producer>(
     // The connection was closed
     if currently_in_transaction {
         if let Err(e) = producer.abort_transaction().await {
-            eprintln!("Failed to abort final transaction {:?}", e);
+            error!(error = ?e, "Failed to abort final transaction");
         }
     }
 

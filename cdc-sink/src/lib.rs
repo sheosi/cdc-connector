@@ -18,6 +18,7 @@ use rdkafka::{
 use serde::Deserialize;
 use std::net::SocketAddr;
 use thiserror::Error;
+use tracing::error;
 
 #[derive(Deserialize, Default)]
 pub struct KafkaConfig {
@@ -111,19 +112,24 @@ impl KafkaClient {
 
         loop {
             match tokio::time::timeout(Duration::from_millis(500), stream.next()).await {
-                Ok(Some(Ok(msg))) => match msg.payload_view::<[u8]>() {
-                    Some(Ok(payload)) => match Relation::from_avro(payload) {
-                        Ok(rel) => {
-                            relations.insert(rel.relation_oid, rel);
+                Ok(Some(Ok(msg))) => {
+                    tracing::info!("Got relations");
+                    match msg.payload_view::<[u8]>() {
+                        Some(Ok(payload)) => match Relation::from_avro(payload) {
+                            Ok(rel) => {
+                                relations.insert(rel.relation_oid, rel);
+                            }
+                            Err(e) => {
+                                error!(error = ?e, "Failed to decode message")
+                            }
+                        },
+                        Some(Err(())) => {
+                            // This shouldn't fail
+                            panic!("");
                         }
-                        Err(e) => eprintln!("Failed to decode message: {:?}", e),
-                    },
-                    Some(Err(())) => {
-                        // This shouldn't fail
-                        panic!("");
+                        None => {}
                     }
-                    None => {}
-                },
+                }
                 Ok(Some(Err(e))) => return Err(e),
                 Ok(None) | Err(_) => break,
             }
@@ -133,7 +139,7 @@ impl KafkaClient {
     }
 
     pub async fn consume_from_kafka<S: KafkaSink>(&self, mut sink: S) {
-        let topic = format!("^{}\\.events\\.*", self.topic.as_str());
+        let topic = format!("^{}\\.events\\..*", self.topic.as_str());
         let rel_topic = format!("{}.relations", self.topic);
 
         self.consumer
@@ -142,7 +148,7 @@ impl KafkaClient {
 
         let mut stream = self.consumer.stream();
         while let Some(result) = stream.next().await {
-            println!("Got message");
+            tracing::info!("Got message");
             match result {
                 Ok(borrowed_message) => {
                     if let Some(ts) = borrowed_message.timestamp().to_millis() {
@@ -153,9 +159,9 @@ impl KafkaClient {
 
                     if let Some(view) = borrowed_message.payload_view::<[u8]>() {
                         let Some(topic) = borrowed_message.topic().strip_prefix(&self.topic) else {
-                            eprintln!(
-                                "Got topic that doesn't start by the prefix, shouldn't happen: {}",
-                                borrowed_message.topic()
+                            error!(
+                                topic = borrowed_message.topic(),
+                                "Got topic that doesn't start by the prefix, shouldn't happen",
                             );
                             continue;
                         };
@@ -170,12 +176,12 @@ impl KafkaClient {
 
                                     // This is written a little bit awkward but
                                     if let Err(e) = sink.on_event(event).await {
-                                        eprintln!("{:?}", e);
+                                        error!(?e, "Error while sending event to platform");
                                     } else if let Err(e) = self.consumer.commit_message(
                                         &borrowed_message,
                                         rdkafka::consumer::CommitMode::Async,
                                     ) {
-                                        eprintln!("{:?}", e);
+                                        error!(?e, "Failed to set Kafka commit message");
                                     }
 
                                     metrics::histogram!("cdc_event_process_duration_seconds", "op"=> op_str)
@@ -185,24 +191,29 @@ impl KafkaClient {
                                         .increment(1);
                                 }
                                 Err(e) => {
-                                    eprintln!("Failed to parse event's avro: {}", e)
+                                    error!(
+                                        ?e,
+                                        topic,
+                                        key = borrowed_message.key(),
+                                        "Failed to parse event's avro"
+                                    )
                                 }
                             }
                         } else if topic == ".relations" {
                             match Relation::from_avro(view.expect("")) {
                                 Ok(relation) => {
                                     if let Err(e) = sink.on_relation(relation).await {
-                                        eprintln!("{:?}", e);
+                                        error!(error = ?e, "Failed to analyze relation");
                                     }
                                 }
                                 Err(e) => {
-                                    eprintln!("Failed to parse relation's avro: {}", e);
+                                    error!(error = ?e, "Failed to parse relation's avro");
                                 }
                             }
                         }
                     }
                 }
-                Err(e) => eprintln!("Kafka error: {:?}", e),
+                Err(e) => error!(error = ?e, "Kafka error"),
             }
         }
     }

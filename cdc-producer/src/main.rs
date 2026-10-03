@@ -48,14 +48,14 @@ impl KafkaProducer {
 
 impl CdcProducer for KafkaProducer {
     async fn start_transaction(&self) -> Result<(), String> {
-        println!("Start tr");
+        tracing::debug!(message = "Start tr");
         self.inner.begin_transaction().map_err(|e| e.to_string())?;
 
         Ok(())
     }
 
     async fn send<'a>(&self, relation: &Relation, event: ChangeEvent<'a>) -> Result<(), String> {
-        println!("Sending");
+        tracing::debug!(message = "Sending event");
         let payload = event.into_avro().map_err(|e| e.to_string())?;
         let topic = format!(
             "{}.events.{}.{}",
@@ -73,7 +73,7 @@ impl CdcProducer for KafkaProducer {
     }
 
     async fn on_relation(&mut self, relation: &Relation) -> std::prelude::v1::Result<(), String> {
-        println!("Rel");
+        tracing::debug!(message = "On relation");
         let relation_bin = relation.into_avro().map_err(|e| e.to_string())?;
 
         let rel_topic = format!("{}.relations", self.topic);
@@ -92,7 +92,7 @@ impl CdcProducer for KafkaProducer {
     }
 
     async fn commit_transaction(&self, lsn: u64) -> std::prelude::v1::Result<(), String> {
-        println!("End tr");
+        tracing::debug!("End tr");
         let lsn_payload = lsn.to_be_bytes();
 
         let lsn_future_record = FutureRecord::to(&self.lsn_topic)
@@ -197,7 +197,7 @@ async fn read_lsn(kafka_config: &KafkaConfig) -> Result<u64, rdkafka::error::Kaf
             },
             Ok(Some(Err(e))) => return Err(e),
             Ok(None) | Err(_) => {
-                println!("Lsn read timeout: starting from 0");
+                tracing::info!("Lsn read timeout: starting from 0");
                 return Ok(0);
             }
         }

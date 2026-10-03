@@ -12,6 +12,7 @@ use tokio_postgres::{
     tls::NoTlsStream,
     types::{IsNull, ToSql},
 };
+use tracing::error;
 
 use crate::statements::{DeleteStatementCache, InsertStatementCache, UpsertStatementCache};
 
@@ -128,13 +129,10 @@ impl KafkaSink for PostgresSink {
                         .map(|v| ToSqlWrapper(v))
                         .collect_in(&self.arena);
 
-                    if let Err(e) = self
-                        .client
+                    self.client
                         .execute(&insert_stmt.stmt, &extract_keys_ref(&self.arena, &keys))
                         .await
-                    {
-                        eprintln!("{:?}", e);
-                    }
+                        .map_err(|e| SinkError::Platform(e.to_string()))?;
                 }
 
                 self.arena.reset();
@@ -150,13 +148,10 @@ impl KafkaSink for PostgresSink {
                 {
                     let keys = extract_keys(&self.arena, row);
 
-                    if let Err(e) = self
-                        .client
+                    self.client
                         .execute(&update_stmt.stmt, &extract_keys_ref(&self.arena, &keys))
                         .await
-                    {
-                        eprintln!("{:?}", e);
-                    }
+                        .map_err(|e| SinkError::Platform(e.to_string()))?;
                 }
 
                 self.arena.reset();
@@ -191,16 +186,13 @@ impl KafkaSink for PostgresSink {
                         None => return Err(SinkError::UnknownRelation(event.rel)),
                     };
 
-                    if let Err(e) = self
-                        .client
+                    self.client
                         .execute(
                             &delete_stmt.stmt,
                             &extract_keys_ref(&self.arena, &keys).as_slice(),
                         )
                         .await
-                    {
-                        eprintln!("{:?}", e);
-                    }
+                        .map_err(|e| SinkError::Platform(e.to_string()))?;
                 }
 
                 self.arena.reset()
@@ -211,6 +203,7 @@ impl KafkaSink for PostgresSink {
     }
 
     async fn on_relation(&mut self, relation: Relation) -> Result<(), SinkError> {
+        tracing::info!("Got relation");
         self.relation_cache.update(relation);
 
         Ok(())
