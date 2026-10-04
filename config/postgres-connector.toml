@@ -1,0 +1,12 @@
+[postgres]
+host = "127.0.0.1"
+user = "cdc"
+password = "cdc"
+slot_name = "cdc_slot"
+port = 5401
+
+[kafka]
+brokers="localhost:9092"
+topic="example-topic"
+key="default"
+group_id="default"

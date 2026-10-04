@@ -1,0 +1,15 @@
+will_connect_to_feldera = false
+
+[postgres]
+host = "localhost"
+user = "cdc"
+password = "cdc"
+slot_name = "cdc_slot"
+publication = "cdc_pub"
+port = 5400
+dbname = "cdc"
+
+[kafka]
+brokers="localhost:9092"
+topic="example-topic"
+key="default"
