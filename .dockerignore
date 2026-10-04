@@ -1,0 +1,7 @@
+*/target
+Dockerfile
+docker-compose.yml
+*.MD
+LICENSE.APACHE
+LICENSE.MIT
+justfile
