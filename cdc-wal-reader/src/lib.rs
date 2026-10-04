@@ -60,20 +60,14 @@ pub struct PostgresConfig {
     password: String,
     slot_name: String,
     dbname: String,
+    publication: String,
 
     #[serde(default = "default_port")]
     port: u16,
-
-    #[serde(default = "default_publication")]
-    publication: String,
 }
 
 fn default_port() -> u16 {
     5432
-}
-
-fn default_publication() -> String {
-    "cdc_pub".to_string()
 }
 
 pub async fn start_wal_input<P: Producer>(

@@ -115,11 +115,9 @@ services:
 #       PG_CONN_POSTGRES_HOST = "127.0.0.1"
 #       PG_CONN_POSTGRES_USER = "cdc"
 #       PG_CONN_POSTGRES_PASSWORD = "cdc"
-#       PG_CONN_POSTGRES_SLOT_NAME = "cdc_slot"
 #       PG_CONN_POSTGRES_PORT = 5401
 #       PG_CONN_KAFKA_BROKERS = ""
 #       PG_CONN_KAFKA_TOPIC = "example-topic"
-#       PG_CONN_KAFKA_KEY = "default"
 #       PG_CONN_KAFKA_GROUP_ID = "default"
 #
 #     build:
@@ -164,7 +162,7 @@ services:
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
     volumes:
-      - ./docker/prometheus.yml:/etc/prometheus.yml:ro
+      - ./docker/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     ports:
       - "9090:9090"
 

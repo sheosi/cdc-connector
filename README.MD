@@ -36,19 +36,55 @@ cdc-sink (lib) + postgres-connector (bin) / cdc-sink (lib) + feldera-connector (
 
 ```bash
 docker compose up -d
-cargo run --bin cdc-producer
-cargo run --bin postgres-connector
 ```
+
+* Note: This compose inits everything: Postgres source db, Postgres sink db, redpanda, grafana, cdc-producer, postgres-sink. *
 
 ## Configuration
 
-| Var | Default | Description |
-|---|---|---|
-| `POSTGRES_URL` | `postgres://postgres:postgres@localhost:5432/postgres` | Source DB |
-| `KAFKA_BOOTSTRAP` | `localhost:9092` | Kafka brokers |
-| `TOPIC_PREFIX` | `cdc` | Topic prefix |
-| `PUBLICATION` | `cdc_pub` | Postgres publication name
+### cdc-producer
 
+Also, checkout `config/feldera-connector.toml`
+
+| Var | Default | Description |
+|-----|---------|-------------|
+| `CDC_PROD_WILL_CONNECT_TO_FELDERA` | `false` | Whether the `feldera-connector` is going to be used |
+| `CDC_PROD_POSTGRES_HOST` | None | source DB host|
+| `CDC_PROD_POSTGRES_USER` | None | Source DB user |
+| `CDC_PROD_POSTGRES_PASSWORD` | None | Source DB password |
+| `CDC_PROD_POSTGRES_SLOT_NAME` | None | Source DB slot name |
+| `CDC_PROD_POSTGRES_DBNAME` | None | Source DB name to connect to |
+| `CDC_PROD_POSTGRES_PUBLICATION` | None | Source DB publication name |
+| `CDC_PROD_POSTGRES_PORT` | `5432` | Source DB port |
+| `CDC_PROD_KAFKA_BROKERS` | None | Kafka brokers host and port |
+| `CDC_PROD_KAFKA_TOPIC` | `cdc` | Parent topic where to put all the events, relations and lsn |
+| `CDC_PROD_KAFKA_KEY` | None | The key to use in kafka |
+
+### postgres-connector
+
+Also, checkout `config/postgres-connector.toml`
+
+| Var | Default | Description |
+|-----|---------|-------------|
+| `PG_CONN_POSTGRES_HOST` | `127.0.0.1` | Sink DB host |
+| `PG_CONN_POSTGRES_USER` | `cdc` | Sink DB user |
+| `PG_CONN_POSTGRES_PASSWORD` | `cdc` | Sink DB password |
+| `PG_CONN_POSTGRES_PORT` | `5401` | Sink DB port |
+| `PG_CONN_KAFKA_BROKERS` | None | Kafka brokers host and port |
+| `PG_CONN_KAFKA_TOPIC` | `cdc` | Parent topic to read all the events, relations and lsn from |
+| `PG_CONN_KAFKA_GROUP_ID` | `default` | The Kafka group id this pertains |
+
+## feldera-connector
+
+Also, checkout `config/feldera-connector.toml`
+
+| Var | Default | Description |
+|-----|---------|-------------|
+| FELD_CONN_FELDERA_URL | `` | Feldera URL to connect to |
+| FELD_CONN_FELDERA_PIPELINE | `` | Feldera pipeline |
+| FELD_CONN_KAFKA_BROKERS | None | Kafka brokers to host and port |
+| FELD_CONN_KAFKA_TOPIC | `cdc` | Parent topic to read all the events, relations and lsn from |
+| FELD_CONN_KAFKA_GROUP_ID | `default` | The Kafka group id this pertains |
 
 ## Exactly-once
 
@@ -66,6 +102,19 @@ The MSRV is 1.93.1 due to our use of the feldera apis that require that version.
 | Operation | Latency |
 |---|---|
 | Insert tuple parse | ~135 ns |
+| Relation tuple parse | ~400 ns |
+
+Events are really fast to parse, we make use of every possible trick: Simd, Zero-copy and Arenas.
+
+Relations on the other hand we want them to persist in memory, so we can't make use of zero-copy nor arenas (given that not only they have to persist, with time some of them will be removed, something very complicated in an arena).
+
+
+## Known limitations
+
+This is a Poc project, rather than a full one. So it's scope it's reduced:
+
+* Postgres data types: Right now only int4 and text are supported.
+* Postgres WAL messages: insert, delete, update, Transaction begin/end are the ones supported. logical decoding, origin, types, truncate, stream start/stop/commit/abort, begin prepare, preare, prepare, rollback prepare and stream prepare messages aren't supported.
 
 ## License
 

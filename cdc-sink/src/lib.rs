@@ -26,11 +26,17 @@ pub struct KafkaConfig {
 
     #[serde(default = "default_topic")]
     pub topic: String,
+
+    #[serde(default = "default_group")]
     pub group_id: String,
 }
 
 fn default_topic() -> String {
     "cdc".to_string()
+}
+
+fn default_group() -> String {
+    "default".to_string()
 }
 
 impl KafkaConfig {
