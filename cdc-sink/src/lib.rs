@@ -224,9 +224,9 @@ impl KafkaClient {
                 }
                 Err(e) => error!(error = ?e, "Kafka error"),
             }
-        }
 
-        arena.reset();
+            arena.reset();
+        }
     }
 }
 
