@@ -24,7 +24,3 @@ tracing = "0.1.44"
 inventory = "0.3.24"
 libtest-mimic = "0.8.2"
 integration-tests = {path = "../integration-tests"}
-
-[[test]]
-name = "example"
-harness = false
