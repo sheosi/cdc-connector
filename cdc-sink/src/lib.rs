@@ -53,6 +53,7 @@ impl KafkaConfig {
             .set("enable.partition.eof", "false")
             .set("session.timeout.ms", "6000")
             .set("isolation.level", "read_committed")
+            .set("auto.offset.reset", "earliest")
             .set_log_level(log_level)
             .create()
             .expect("Consumer creation failed");

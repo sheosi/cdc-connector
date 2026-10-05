@@ -1,11 +1,11 @@
 [workspace]
 members = [
-    "cdc-avro",
+    "cdc-avro", "cdc-integration-tests",
     "cdc-producer",
     "cdc-sink",
     "cdc-wal-reader",
     "feldera-connector"
-, "postgres-connector"]
+, "integration-tests", "integration-tests-macros", "postgres-connector"]
 
 
 resolver = "3"

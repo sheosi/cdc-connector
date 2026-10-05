@@ -1,0 +1,15 @@
+[package]
+name = "cdc-integration-tests"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+testcontainers = "0.27.0"
+testcontainers-modules =  { version = "0.15.0", features = ["kafka", "postgres"] }
+tokio = { version = "1.53.2", features = ["macros", "rt"], default-features = false }
+tokio-postgres = "0.7.18"
+
+[dev-dependencies]
+serial_test = "4.0.1"

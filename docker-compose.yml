@@ -85,53 +85,53 @@ services:
       redpanda:
         condition: service_healthy
 
-#   cdc-producer:
-#     environment:
-#       CDC_PROD_WILL_CONNECT_TO_FELDERA = "false"
-#       CDC_PROD_POSTGRES_HOST = "localhost"
-#       CDC_PROD_POSTGRES_USER = "cdc"
-#       CDC_PROD_POSTGRES_PASSWORD = "cdc"
-#       CDC_PROD_POSTGRES_SLOT_NAME = "cdc_slot"
-#       CDC_PROD_POSTGRES_PORT = 5400
-#       CDC_PROD_KAFKA_BROKERS = "localhost:9092"
-#       CDC_PROD_KAFKA_TOPIC = "example-topic"
-#       CDC_PROD_KAFKA_KEY = "default"
-#
-#     build:
-#       context: .
-#       dockerfile: Dockerfile
-#     container_name: cdc-producer
-#     command: ["/app/cdc-producer"]
-#     ports:
-#       - "9000:9000"
-#     depends_on:
-#       postgres-source:
-#         condition: service_healthy
-#       redpanda:
-#         condition: service_healthy
-#
-#   postgres-connector:
-#     environment:
-#       PG_CONN_POSTGRES_HOST = "127.0.0.1"
-#       PG_CONN_POSTGRES_USER = "cdc"
-#       PG_CONN_POSTGRES_PASSWORD = "cdc"
-#       PG_CONN_POSTGRES_PORT = 5401
-#       PG_CONN_KAFKA_BROKERS = ""
-#       PG_CONN_KAFKA_TOPIC = "example-topic"
-#       PG_CONN_KAFKA_GROUP_ID = "default"
-#
-#     build:
-#       context: .
-#       dockerfile: Dockerfile
-#     container_name: cdc-postgres-connector
-#     command: ["/app/postgres-connector"]
-#     ports:
-#       - "9001:9001"
-#     depends_on:
-#       postgres-sink:
-#         condition: service_healthy
-#       redpanda:
-#         condition: service_healthy
+  cdc-producer:
+    environment:
+      CDC_PROD_WILL_CONNECT_TO_FELDERA = "false"
+      CDC_PROD_POSTGRES_HOST = "localhost"
+      CDC_PROD_POSTGRES_USER = "cdc"
+      CDC_PROD_POSTGRES_PASSWORD = "cdc"
+      CDC_PROD_POSTGRES_SLOT_NAME = "cdc_slot"
+      CDC_PROD_POSTGRES_PORT = 5400
+      CDC_PROD_KAFKA_BROKERS = "localhost:9092"
+      CDC_PROD_KAFKA_TOPIC = "example-topic"
+      CDC_PROD_KAFKA_KEY = "default"
+
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cdc-producer
+    command: ["/app/cdc-producer"]
+    ports:
+      - "9000:9000"
+    depends_on:
+      postgres-source:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+
+  postgres-connector:
+    environment:
+      PG_CONN_POSTGRES_HOST = "127.0.0.1"
+      PG_CONN_POSTGRES_USER = "cdc"
+      PG_CONN_POSTGRES_PASSWORD = "cdc"
+      PG_CONN_POSTGRES_PORT = 5401
+      PG_CONN_KAFKA_BROKERS = ""
+      PG_CONN_KAFKA_TOPIC = "example-topic"
+      PG_CONN_KAFKA_GROUP_ID = "default"
+
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cdc-postgres-connector
+    command: ["/app/postgres-connector"]
+    ports:
+      - "9001:9001"
+    depends_on:
+      postgres-sink:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
 #
 #   feldera-connector:
 #     environment:
