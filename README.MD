@@ -52,7 +52,7 @@ Also, checkout `config/feldera-connector.toml`
 | `CDC_PROD_POSTGRES_HOST` | None | source DB host|
 | `CDC_PROD_POSTGRES_USER` | None | Source DB user |
 | `CDC_PROD_POSTGRES_PASSWORD` | None | Source DB password |
-| `CDC_PROD_POSTGRES_SLOT_NAME` | None | Source DB slot name |
+| `CDC_PROD_POSTGRES_SLOTNAME` | None | Source DB slot name |
 | `CDC_PROD_POSTGRES_DBNAME` | None | Source DB name to connect to |
 | `CDC_PROD_POSTGRES_PUBLICATION` | None | Source DB publication name |
 | `CDC_PROD_POSTGRES_PORT` | `5432` | Source DB port |

@@ -87,15 +87,17 @@ services:
 
   cdc-producer:
     environment:
-      CDC_PROD_WILL_CONNECT_TO_FELDERA = "false"
-      CDC_PROD_POSTGRES_HOST = "localhost"
-      CDC_PROD_POSTGRES_USER = "cdc"
-      CDC_PROD_POSTGRES_PASSWORD = "cdc"
-      CDC_PROD_POSTGRES_SLOT_NAME = "cdc_slot"
-      CDC_PROD_POSTGRES_PORT = 5400
-      CDC_PROD_KAFKA_BROKERS = "localhost:9092"
-      CDC_PROD_KAFKA_TOPIC = "example-topic"
-      CDC_PROD_KAFKA_KEY = "default"
+      CDC_PROD_WILL_CONNECT_TO_FELDERA: "false"
+      CDC_PROD_POSTGRES_HOST: "localhost"
+      CDC_PROD_POSTGRES_USER: "cdc"
+      CDC_PROD_POSTGRES_PASSWORD: "cdc"
+      CDC_PROD_POSTGRES_SLOTNAME: "cdc_slot"
+      CDC_PROD_POSTGRES_DBNAME: "cdc"
+      CDC_PROD_POSTGRES_PUBLICATION: "cdc_pub"
+      CDC_PROD_POSTGRES_PORT: 5400
+      CDC_PROD_KAFKA_BROKERS: "localhost:9092"
+      CDC_PROD_KAFKA_TOPIC: "example-topic"
+      CDC_PROD_KAFKA_KEY: "default"
 
     build:
       context: .
@@ -112,13 +114,13 @@ services:
 
   postgres-connector:
     environment:
-      PG_CONN_POSTGRES_HOST = "127.0.0.1"
-      PG_CONN_POSTGRES_USER = "cdc"
-      PG_CONN_POSTGRES_PASSWORD = "cdc"
-      PG_CONN_POSTGRES_PORT = 5401
-      PG_CONN_KAFKA_BROKERS = ""
-      PG_CONN_KAFKA_TOPIC = "example-topic"
-      PG_CONN_KAFKA_GROUP_ID = "default"
+      PG_CONN_POSTGRES_HOST: "127.0.0.1"
+      PG_CONN_POSTGRES_USER: "cdc"
+      PG_CONN_POSTGRES_PASSWORD: "cdc"
+      PG_CONN_POSTGRES_PORT: 5401
+      PG_CONN_KAFKA_BROKERS: ""
+      PG_CONN_KAFKA_TOPIC: "example-topic"
+      PG_CONN_KAFKA_GROUP_ID: "default"
 
     build:
       context: .

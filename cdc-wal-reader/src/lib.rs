@@ -58,7 +58,7 @@ pub struct PostgresConfig {
     host: String,
     user: String,
     password: String,
-    slot_name: String,
+    slotname: String,
     dbname: String,
     publication: String,
 
@@ -78,9 +78,9 @@ pub async fn start_wal_input<P: Producer>(
     let pg_config = ReplicationConfig::new(
         own_config.host,
         own_config.user,
-        own_config.password,  // host, user, password
-        own_config.dbname,    // dbname
-        own_config.slot_name, // slot name
+        own_config.password, // host, user, password
+        own_config.dbname,   // dbname
+        own_config.slotname, // slot name
         own_config.publication,
     )
     .with_start_lsn(Lsn(last_lsn))

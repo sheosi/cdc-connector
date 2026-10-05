@@ -9,7 +9,7 @@ use tokio_postgres::{Client, Config, Connection, NoTls, Socket, tls::NoTlsStream
 
 fn build_crate(name: &str) -> AsyncCommand {
     let mut cmd = AsyncCommand::new("cargo");
-    cmd.args(["build", "--bin", name]);
+    cmd.args(["build", "--bin", name]).current_dir("..");
     cmd
 }
 
@@ -71,11 +71,14 @@ impl CdcProducer {
             .env("CDC_PROD_POSTGRES_HOST", "localhost")
             .env("CDC_PROD_POSTGRES_USER", "cdc")
             .env("CDC_PROD_POSTGRES_PASSWORD", "cdc")
-            .env("CDC_PROD_POSTGRES_SLOT_NAME", "cdc_slot")
+            .env("CDC_PROD_POSTGRES_SLOTNAME", "cdc_slot")
+            .env("CDC_PROD_POSTGRES_DBNAME", "cdc")
+            .env("CDC_PROD_POSTGRES_PUBLICATION", "cdc_pub")
             .env("CDC_PROD_POSTGRES_PORT", "5400")
             .env("CDC_PROD_KAFKA_BROKERS", "localhost:9092")
             .env("CDC_PROD_KAFKA_TOPIC", "example-topic")
             .env("CDC_PROD_KAFKA_KEY", "default")
+            .env("CDC_PROD_POSTGRESS_DBNAME", "cdc")
             .spawn()
             .expect("Failed to spawn cdc-producer");
 
