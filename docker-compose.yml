@@ -6,6 +6,8 @@ services:
       POSTGRES_USER: cdc
       POSTGRES_PASSWORD: cdc
       POSTGRES_DB: cdc
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --auth-local=scram-sha-256"
+
     command:
       - postgres
       - -c
@@ -31,6 +33,8 @@ services:
       POSTGRES_USER: cdc
       POSTGRES_PASSWORD: cdc
       POSTGRES_DB: cdc
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --auth-local=scram-sha-256"
+
     ports:
       - "5401:5432"
     volumes:
@@ -121,6 +125,7 @@ services:
       PG_CONN_KAFKA_BROKERS: ""
       PG_CONN_KAFKA_TOPIC: "example-topic"
       PG_CONN_KAFKA_GROUP_ID: "default"
+
 
     build:
       context: .

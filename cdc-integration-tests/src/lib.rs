@@ -2,8 +2,10 @@ use std::{
     process::{Child, Command},
     time::{Duration, Instant},
 };
-use testcontainers::{ContainerAsync, ImageExt, core::ContainerPort, runners::AsyncRunner};
-use testcontainers_modules::{kafka::Kafka, postgres::Postgres};
+use testcontainers::{
+    ContainerAsync, GenericImage, Healthcheck, ImageExt, core::ContainerPort, runners::AsyncRunner,
+};
+use testcontainers_modules::postgres::Postgres;
 use tokio::{join, process::Command as AsyncCommand};
 use tokio_postgres::{Client, Config, Connection, NoTls, Socket, tls::NoTlsStream};
 
@@ -14,7 +16,8 @@ fn build_crate(name: &str) -> AsyncCommand {
 }
 
 pub struct Infra {
-    _kafka: ContainerAsync<Kafka>,
+    //_kafka: ContainerAsync<Kafka>,
+    _red_panda: ContainerAsync<GenericImage>,
     _src_postgres: ContainerAsync<Postgres>,
     src_client: tokio_postgres::Client,
     _src_conn: tokio_postgres::Connection<Socket, NoTlsStream>,
@@ -31,13 +34,13 @@ impl Infra {
         table: &str,
         where_clause: &str,
         timeout_duration: Duration,
-    ) -> bool {
-        let sql = format!("SELECT 1 F   ROM {} WHERE {}", table, where_clause);
+    ) {
+        let sql = format!("SELECT 1 FROM {} WHERE {}", table, where_clause);
         let start = Instant::now();
 
         loop {
             if start.elapsed() > timeout_duration {
-                return false;
+                panic!("Row didn't appear in sink")
             }
 
             match self
@@ -46,9 +49,23 @@ impl Infra {
                 .await
                 .expect("Failed sink query")
             {
-                Some(_) => return true,
+                Some(_) => return,
                 None => tokio::time::sleep(Duration::from_millis(500)).await,
             }
+        }
+    }
+
+    pub async fn not_sink_row(&self, table: &str, where_clause: &str) {
+        let sql = format!("SELECT 1 FROM {} WHERE {}", table, where_clause);
+
+        if self
+            .sink_client
+            .query_opt(&sql, &[])
+            .await
+            .expect("Failed sink query")
+            .is_some()
+        {
+            panic!("Row is still present");
         }
     }
 
@@ -136,17 +153,52 @@ async fn create_conn(port: u16) -> (Client, Connection<Socket, NoTlsStream>) {
 }
 
 pub async fn init_infra() -> Infra {
-    let kafka = testcontainers_modules::kafka::Kafka::default().start();
+    //let kafka = testcontainers_modules::kafka::Kafka::default().start();
+    let redpanda =
+        testcontainers::GenericImage::new("docker.redpanda.com/redpandadata/redpanda", "v24.2.9")
+            .with_cmd([
+                "redpanda",
+                "start",
+                "--overprovisioned",
+                "--smp",
+                "1",
+                "--memory",
+                "1G",
+                "--reserve-memory",
+                "0M",
+                "--node-id",
+                "0",
+                "--kafka-addr",
+                "PLAIN://0.0.0.0:29092,OUTSIDE://0.0.0.0:9092",
+                "--advertise-kafka-addr",
+                "PLAIN://redpanda:29092,OUTSIDE://localhost:9092",
+                "--rpc-addr",
+                "0.0.0.0:33145",
+                "--advertise-rpc-addr",
+                "redpanda:33145",
+            ])
+            .with_mapped_port(9092, ContainerPort::Tcp(9092))
+            .with_mapped_port(29092, ContainerPort::Tcp(29092))
+            .with_mapped_port(9644, ContainerPort::Tcp(9644))
+            .with_health_check(
+                Healthcheck::cmd_shell("rpk cluster health")
+                    .with_interval(Some(Duration::from_secs(5)))
+                    .with_timeout(Duration::from_secs(5))
+                    .with_retries(10),
+            )
+            .start();
 
     let src_postgres = testcontainers_modules::postgres::Postgres::default()
         .with_db_name("cdc")
         .with_user("cdc")
         .with_password("cdc")
+        .with_host_auth()
         .with_init_sql(
             include_str!("../../scripts/init-source.sql")
                 .to_string()
                 .into_bytes(),
         )
+        .with_tag("18-alpine")
         .with_cmd([
             "postgres",
             "-c",
@@ -163,11 +215,13 @@ pub async fn init_infra() -> Infra {
         .with_db_name("cdc")
         .with_user("cdc")
         .with_password("cdc")
+        .with_host_auth()
         .with_init_sql(
             include_str!("../../scripts/init-sink.sql")
                 .to_string()
                 .into_bytes(),
         )
+        .with_tag("18-alpine")
         .with_mapped_port(5401, ContainerPort::Tcp(5432))
         .start();
 
@@ -175,8 +229,14 @@ pub async fn init_infra() -> Infra {
     let postgres_connector_build = build_crate("postgres-connector").status();
     //let feldera_connector_build = build_crate("feldera-connector").status();
 
-    let (res_kafka, res_src_postgres, res_sink_postgres, res_cdc_producer, res_postgres_connector) = join!(
-        kafka,
+    let (
+        res_redpanda,
+        res_src_postgres,
+        res_sink_postgres,
+        res_cdc_producer,
+        res_postgres_connector,
+    ) = join!(
+        redpanda,
         src_postgres,
         sink_postgres,
         cdc_producer_build,
@@ -185,6 +245,9 @@ pub async fn init_infra() -> Infra {
 
     res_cdc_producer.expect("Failed to build cdc producer");
     res_postgres_connector.expect("Failed to build postgres connector");
+
+    // Wait for processes to be active
+    std::thread::sleep(Duration::from_secs(1));
 
     let cdc_producer = CdcProducer::start();
     let postgres_connector = PostgresConnector::start();
@@ -196,7 +259,8 @@ pub async fn init_infra() -> Infra {
         join!(create_conn(5400), create_conn(5401));
 
     Infra {
-        _kafka: res_kafka.expect("Failed to init Kafka"),
+        //_kafka: res_kafka.expect("Failed to init Kafka"),
+        _red_panda: res_redpanda.expect("Failed to init RedPanda"),
         _src_postgres: res_src_postgres.expect("Failed to init source Postgres"),
         _sink_postgres: res_sink_postgres.expect("Failed to init sink Postgres"),
         _cdc_producer: cdc_producer,

@@ -115,6 +115,9 @@ This is a Poc project, rather than a full one. So it's scope it's reduced:
 
 * Postgres data types: Right now only int4 and text are supported.
 * Postgres WAL messages: insert, delete, update, Transaction begin/end are the ones supported. logical decoding, origin, types, truncate, stream start/stop/commit/abort, begin prepare, preare, prepare, rollback prepare and stream prepare messages aren't supported.
+* One db per cdc-producer
+
+
 
 ## License
 
