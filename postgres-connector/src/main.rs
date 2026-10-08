@@ -258,20 +258,12 @@ impl RelationCache {
 
         let fields = rels
             .iter()
-            .map(|(i, v)| (*i, v.fields.iter().map(|f| f.name.clone()).collect()))
+            .map(|(i, v)| (*i, extract_fields_names(v)))
             .collect();
 
         let keys = rels
             .iter()
-            .map(|(i, v)| {
-                (
-                    *i,
-                    v.fields
-                        .iter()
-                        .filter_map(|f| if f.is_key { Some(f.name.clone()) } else { None })
-                        .collect(),
-                )
-            })
+            .map(|(i, v)| (*i, extract_keys_rel(v)))
             .collect();
 
         Self {
@@ -285,6 +277,10 @@ impl RelationCache {
     pub fn update(&mut self, relation: Relation) {
         self.identities
             .insert(relation.relation_oid, extract_key_identity(&relation));
+        self.fields
+            .insert(relation.relation_oid, extract_fields_names(&relation));
+        self.keys
+            .insert(relation.relation_oid, extract_keys_rel(&relation));
         self.table_names
             .insert(relation.relation_oid, relation.name);
     }
@@ -308,6 +304,17 @@ fn extract_key_identity(rel: &Relation) -> RelationIdentity {
         ReplicaKind::Keys => RelationIdentity::Keys(extract_keys_pos(&rel.fields)),
         ReplicaKind::Row => RelationIdentity::Full,
     }
+}
+
+fn extract_fields_names(rel: &Relation) -> Vec<String> {
+    rel.fields.iter().map(|f| f.name.clone()).collect()
+}
+
+fn extract_keys_rel(rel: &Relation) -> Vec<String> {
+    rel.fields
+        .iter()
+        .filter_map(|f| if f.is_key { Some(f.name.clone()) } else { None })
+        .collect()
 }
 
 fn extract_keys<'a>(
