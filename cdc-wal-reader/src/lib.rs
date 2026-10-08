@@ -103,7 +103,7 @@ pub async fn start_wal_input<P: Producer>(
                 match data[0] {
                     b'R' => match RelationData::parse(data) {
                         Ok(relation) => {
-                            println!("{:?}", &relation);
+                            debug!("{:?}", &relation);
 
                             if let Err(e) = producer.on_relation(&relation.inner).await {
                                 error!(error = e, "Failed to send relation");
@@ -120,15 +120,11 @@ pub async fn start_wal_input<P: Producer>(
                         if currently_in_transaction {
                             let insert = decoder::insert::parse(&data, &relation_map, &arena);
 
-                            println!("Got insert: {:?}", insert);
-
                             send_to_producer(insert, &producer, &mut currently_in_transaction)
                                 .await;
                         }
                     }
                     b'D' => {
-                        println!("Remove bytes={:?}", &data);
-
                         // If not in a transaction because it was aborted, skip treating this
                         if currently_in_transaction {
                             send_to_producer(
@@ -140,8 +136,6 @@ pub async fn start_wal_input<P: Producer>(
                         }
                     }
                     b'U' => {
-                        println!("Delete bytes={:?}", &data);
-
                         // If not in a transaction because it was aborted, skip treating this
                         if currently_in_transaction {
                             send_to_producer(
@@ -153,7 +147,7 @@ pub async fn start_wal_input<P: Producer>(
                         }
                     }
                     _ => {
-                        println!("XLogData wal_end={} bytes={:?}", wal_end, data);
+                        debug!("XLogData wal_end={} bytes={:?}", wal_end, data);
                     }
                 }
             }
@@ -206,12 +200,12 @@ pub async fn start_wal_input<P: Producer>(
                 prefix,
                 content,
             } => {
-                println!(
+                debug!(
                     "Got message: {} {} {} {:?}",
                     transactional, lsn, prefix, content
                 );
             }
-            ev => println!("other: {:?}", ev),
+            ev => debug!("other: {:?}", ev),
         }
     }
 

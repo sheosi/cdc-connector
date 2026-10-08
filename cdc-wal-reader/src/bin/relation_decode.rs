@@ -3,6 +3,7 @@ use std::time::Instant;
 use bumpalo::Bump;
 use bytes::Bytes;
 use cdc_wal_reader::decoder::relation::RelationData;
+use tracing::debug;
 
 const RELATION_DATA: &[u8] = &[
     b'R', // Relation message
@@ -38,11 +39,11 @@ fn main() {
 
     // Validate once
     let rel = RelationData::parse(data.clone()).expect("parse failed");
-    println!(
+    debug!(
         "Parsed relation: {}.{}",
         rel.inner.namespace, rel.inner.name
     );
-    println!("Columns: {}", rel.inner.fields.len());
+    debug!("Columns: {}", rel.inner.fields.len());
 
     // Tight loop for profiling
     let iterations = 10_000_000;
@@ -53,7 +54,7 @@ fn main() {
     }
 
     let elapsed = start.elapsed();
-    println!(
+    debug!(
         "{} iterations in {:?} ({:.0} ns/iter)",
         iterations,
         elapsed,

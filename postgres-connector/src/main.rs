@@ -107,7 +107,7 @@ impl KafkaSink for PostgresSink {
         event: ChangeEvent<'a>,
         arena: &Bump,
     ) -> Result<(), SinkError> {
-        println!("Got event: {:?}", &event);
+        debug!("Got event: {:?}", &event);
         match event.op {
             Op::Insert { row } => {
                 let insert_stmt = self

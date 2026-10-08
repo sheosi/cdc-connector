@@ -132,7 +132,7 @@ impl PostgresConnector {
             .env("PG_CONN_POSTGRES_USER", "cdc")
             .env("PG_CONN_POSTGRES_PASSWORD", "cdc")
             .env("PG_CONN_POSTGRES_PORT", "5401")
-            .env("PG_CONN_KAFKA_BROKERS", "localhost:9092")
+            .env("PG_CONN_KAFKA_BROKERS", "localhost:909")
             .env("PG_CONN_KAFKA_TOPIC", "example-topic")
             .env("PG_CONN_KAFKA_GROUP_ID", "default")
             .spawn()
