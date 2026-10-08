@@ -84,6 +84,7 @@ pub async fn start_wal_input<P: Producer>(
         own_config.publication,
     )
     .with_start_lsn(Lsn(last_lsn))
+    .with_binary(true)
     .with_port(own_config.port);
 
     let mut client = ReplicationClient::connect(pg_config).await?;
