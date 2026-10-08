@@ -103,6 +103,7 @@ mod test {
                 name: "id".to_string(),
                 kind: FieldKind::Int4,
             }],
+            key_indexes: std::vec![0],
         }
     }
 
@@ -110,10 +111,11 @@ mod test {
     pub fn simple_delete_key() {
         let data = Bytes::from_static(&[
             b'D', 0, 0, 0, 1, // Relation OID
-            b'K', 0, 1, // Two columns
+            b'K', 0, 1, // One col
             // First col
             b'b', 0, 0, 0, 4, // Binary of size 4
             0, 0, 0, 1, // Int4: 1
+            b'n', b'n',
         ]);
 
         let arena = Bump::with_capacity(512);
@@ -147,7 +149,7 @@ mod test {
 
         let arena = Bump::new();
 
-        let relation_map = common::get_example_rel_map(&arena);
+        let relation_map = common::get_example_rel_map();
 
         let event = parse(&data, &relation_map, &arena);
 
@@ -161,7 +163,7 @@ mod test {
             rel: 1,
         };
 
-        assert_eq!(event, Ok((event_example, &get_example_rel_data(&arena))));
+        assert_eq!(event, Ok((event_example, &get_example_rel_data())));
     }
 
     #[test]
@@ -184,14 +186,13 @@ mod test {
         let event_example = ChangeEvent {
             op: Op::Delete {
                 old: vec![in &arena;
-                    PgValue::Int4(1),
-                    PgValue::Text("hello")
+                    PgValue::Int4(4)
                 ],
             },
-            rel: 1,
+            rel: 16386,
         };
 
-        assert_eq!(event, Ok((event_example, &get_example_rel_data(&arena))));
+        assert_eq!(event, Ok((event_example, &get_tests_rel_data())));
     }
 
     // Errors
@@ -201,7 +202,7 @@ mod test {
 
         let arena = Bump::new();
 
-        let relation_map = common::get_example_rel_map(&arena);
+        let relation_map = common::get_example_rel_map();
 
         let event = parse(&data, &relation_map, &arena);
 
@@ -214,7 +215,7 @@ mod test {
 
         let arena = Bump::new();
 
-        let relation_map = common::get_example_rel_map(&arena);
+        let relation_map = common::get_example_rel_map();
 
         let event = parse(&data, &relation_map, &arena);
 
@@ -227,7 +228,7 @@ mod test {
 
         let arena = Bump::new();
 
-        let relation_map = common::get_example_rel_map(&arena);
+        let relation_map = common::get_example_rel_map();
 
         let event = parse(&data, &relation_map, &arena);
 
@@ -240,7 +241,7 @@ mod test {
 
         let arena = Bump::new();
 
-        let relation_map = common::get_example_rel_map(&arena);
+        let relation_map = common::get_example_rel_map();
 
         let event = parse(&data, &relation_map, &arena);
 

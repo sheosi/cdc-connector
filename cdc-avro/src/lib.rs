@@ -100,7 +100,7 @@ pub mod owned {
     }
 }
 
-const CHANGE_EVENT_SCHEMA_STR: &str = r#"{"type":"record","name":"ChangeEvent","fields":[{"name":"op","type":[{"type":"record","name":"Insert","fields":[{"name":"row","type":{"type":"array","items":[{"type":"record","name":"Text","fields":[{"name":"Text","type":"string"}]},{"type":"record","name":"Int4","fields":[{"name":"Int4","type":"long"}]}]}}]},{"type":"record","name":"Update","fields":[{"name":"old","type":{"type":"array","items":["Text","Int4"]}},{"name":"row","type":{"type":"array","items":["Text","Int4"]}}]},{"type":"record","name":"Delete","fields":[{"name":"old","type":{"type":"array","items":["Text","Int4"]}}]}]},{"name":"rel","type":"long"}]}"#;
+const CHANGE_EVENT_SCHEMA_STR: &str = r#"{"type":"record","name":"ChangeEvent","fields":[{"name":"op","type":[{"type":"record","name":"Insert","fields":[{"name":"row","type":{"type":"array","items":[{"type":"record","name":"Text","fields":[{"name":"Text","type":"string"}]},{"type":"record","name":"Int4","fields":[{"name":"Int4","type":"long"}]},{"type":"record","name":"Null","fields":[{"name":"Null","type":"null"}]}]}}]},{"type":"record","name":"Update","fields":[{"name":"old","type":{"type":"array","items":["Text","Int4","Null"]}},{"name":"row","type":{"type":"array","items":["Text","Int4","Null"]}}]},{"type":"record","name":"Delete","fields":[{"name":"old","type":{"type":"array","items":["Text","Int4","Null"]}}]}]},{"name":"rel","type":"long"}]}"#;
 
 const RELATION_SCHEMA_STR: &str = r#"{"type":"record","name":"Relation","fields":[{"name":"relation_oid","type":"long"},{"name":"namespace","type":"string"},{"name":"name","type":"string"},{"name":"fields","type":{"type":"array","items":{"type":"record","name":"Field","fields":[{"name":"is_key","type":"boolean"},{"name":"name","type":"string"},{"name":"kind","type":"int"}]}}},{"name":"replica_id","type":"int"}]}"#;
 
@@ -233,6 +233,7 @@ impl<'de> Deserialize<'de> for ReplicaKind {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum PgValue<'a> {
+    Null,
     Text(&'a str),
     Int4(i32),
 }
@@ -240,6 +241,11 @@ pub enum PgValue<'a> {
 impl<'a> Serialize for PgValue<'a> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match self {
+            PgValue::Null => {
+                let mut record = serializer.serialize_struct("Null", 1)?;
+                record.serialize_field("Null", &())?;
+                record.end()
+            }
             PgValue::Text(s) => {
                 let mut record = serializer.serialize_struct("Text", 1)?;
                 record.serialize_field("Text", s)?;
@@ -278,6 +284,10 @@ impl<'de: 'a, 'a> Deserialize<'de> for PgValue<'a> {
                     "Int4" => {
                         let value: i32 = map.next_value()?;
                         Ok(PgValue::Int4(value))
+                    }
+                    "Null" => {
+                        let _ = map.next_value::<()>()?;
+                        Ok(PgValue::Null)
                     }
                     other => Err(serde::de::Error::custom(format!(
                         "unknown PgValue variant: {}",

@@ -1,16 +1,16 @@
-use crate::decoder::DecoderError;
+use crate::decoder::{DecoderError, relation::KeyField};
 use bumpalo::{Bump, collections::Vec};
-use cdc_avro::{FieldAccess, FieldKind, PgValue};
+use cdc_avro::{Field, FieldAccess, FieldKind, PgValue};
 
-pub fn parse<'a, F: FieldAccess>(
+pub fn parse<'a>(
     data: &'a [u8],
     arena: &'a Bump,
-    fields: &'a [F],
+    fields: &'a [Field],
 ) -> Result<(Vec<'a, PgValue<'a>>, usize), DecoderError> {
     #[inline(always)]
-    fn num_cols<'a, const N: usize, F: FieldAccess>(
+    fn num_cols<'a, const N: usize>(
         data: &'a [u8],
-        fields: &'a [F],
+        fields: &'a [Field],
         arena: &'a Bump,
     ) -> Result<(Vec<'a, PgValue<'a>>, usize), DecoderError> {
         let mut last_pos = 2;
@@ -34,13 +34,17 @@ pub fn parse<'a, F: FieldAccess>(
     // Network byte order is be
     let n_cols = u16::from_be_bytes(data[0..2].try_into().expect(""));
 
+    if n_cols > fields.len() as u16 {
+        return Err(DecoderError::CorruptedInput);
+    }
+
     match n_cols {
-        1 => num_cols::<1, F>(data, fields, arena),
-        2 => num_cols::<2, F>(data, fields, arena),
-        3 => num_cols::<3, F>(data, fields, arena),
-        4 => num_cols::<4, F>(data, fields, arena),
-        5 => num_cols::<5, F>(data, fields, arena),
-        6 => num_cols::<6, F>(data, fields, arena),
+        1 => num_cols::<1>(data, fields, arena),
+        2 => num_cols::<2>(data, fields, arena),
+        3 => num_cols::<3>(data, fields, arena),
+        4 => num_cols::<4>(data, fields, arena),
+        5 => num_cols::<5>(data, fields, arena),
+        6 => num_cols::<6>(data, fields, arena),
         _ => {
             let mut last_pos = 2;
             let mut cols = Vec::with_capacity_in(n_cols as usize, arena);
@@ -59,41 +63,64 @@ pub fn parse<'a, F: FieldAccess>(
 }
 
 // Same but with keyfield instead of field
-pub fn parse_keys<'a, F: FieldAccess>(
+pub fn parse_keys<'a>(
     data: &'a [u8],
     arena: &'a Bump,
-    fields: &'a [F],
+    fields: &'a [KeyField],
+    indexes: &[usize],
+    total_fields: usize,
 ) -> Result<(Vec<'a, PgValue<'a>>, usize), DecoderError> {
     #[inline(always)]
-    fn num_cols<'a, const N: usize, F: FieldAccess>(
+    fn num_cols<'a, const N: usize>(
         data: &'a [u8],
-        fields: &'a [F],
+        fields: &'a [KeyField],
         arena: &'a Bump,
+        indexes: &[usize],
+        total_fields: usize,
     ) -> Result<(Vec<'a, PgValue<'a>>, usize), DecoderError> {
         let mut last_pos = 2;
         let mut cols = Vec::with_capacity_in(N, arena);
 
+        let mut key_idx = 0;
         for i in 0..N {
-            let (value, len) = parse_value(&data[last_pos..], &fields[i])?;
+            if i == indexes[key_idx] {
+                let (value, len) = parse_value(&data[last_pos..], &fields[key_idx])?;
 
-            last_pos += len;
+                last_pos += len;
 
-            cols.push(value);
+                cols.push(value);
+
+                if i < indexes.len() - 1 {
+                    key_idx += 1;
+                } else {
+                    return Ok((cols, last_pos + total_fields - i));
+                }
+            } else {
+                last_pos += 1;
+            }
         }
 
         Ok((cols, last_pos))
     }
 
+    if data.len() < 2 {
+        return Err(DecoderError::TruncatedInput);
+    }
+
     // Network byte order is be
     let n_cols = u16::from_be_bytes(data[0..2].try_into().expect(""));
 
+    if n_cols as usize > total_fields {
+        return Err(DecoderError::CorruptedInput);
+    }
+
     match n_cols {
-        1 => num_cols::<1, F>(data, fields, arena),
-        2 => num_cols::<2, F>(data, fields, arena),
-        3 => num_cols::<3, F>(data, fields, arena),
-        4 => num_cols::<4, F>(data, fields, arena),
-        5 => num_cols::<5, F>(data, fields, arena),
-        6 => num_cols::<6, F>(data, fields, arena),
+        1 => num_cols::<1>(data, fields, arena, indexes, total_fields),
+        2 => num_cols::<2>(data, fields, arena, indexes, total_fields),
+        3 => num_cols::<3>(data, fields, arena, indexes, total_fields),
+        4 => num_cols::<4>(data, fields, arena, indexes, total_fields),
+        5 => num_cols::<5>(data, fields, arena, indexes, total_fields),
+        6 => num_cols::<6>(data, fields, arena, indexes, total_fields),
         _ => {
             let mut last_pos = 2;
             let mut cols = Vec::with_capacity_in(n_cols as usize, arena);
@@ -120,7 +147,7 @@ fn parse_value<'a, F: FieldAccess>(
     }
 
     match data[0] {
-        b'n' => todo!(), //Ok((TupleCol::Null, 1)),
+        b'n' => Ok((PgValue::Null, 1)),
         b'u' => todo!(), //Ok((TupleCol::Toasted, 1)),
         b't' => {
             if data.len() < 5 {
@@ -177,9 +204,10 @@ mod test {
     use cdc_avro::{FieldKind::Int4, PgValue};
 
     use crate::decoder::{
-        DecoderError,
+        DecoderError::{self, CorruptedInput, TruncatedInput},
         common::{
-            col_byte_id, col_text_name, get_example_rel, get_new_tuple_data, get_old_tuple_data,
+            col_byte_id, col_text_name, get_example_rel, get_example_rel_keys, get_new_tuple_data,
+            get_old_tuple_data,
         },
         relation, tuple_data,
     };
@@ -248,7 +276,7 @@ mod test {
     }
 
     #[test]
-    fn too_many_cols() {
+    fn truncated_cols() {
         let data = [0, 1];
 
         let arena = Bump::new();
@@ -338,5 +366,19 @@ mod test {
         let tuple_data = parse(&data, &arena, &relation.fields);
 
         assert_eq!(tuple_data, Err(DecoderError::WrongFieldKind(Int4)))
+    }
+
+    #[test]
+    fn more_fields_than_cols() {
+        let data = [0, 3, b'b', 0, 0, 0, 4, 0, 0, 0, 1, b'n', b'n'];
+
+        let arena = Bump::new();
+
+        let relation = get_example_rel_keys();
+
+        let tuple_data = parse(&data, &arena, &relation.fields);
+        let tuple_data_manual = vec![in &arena; col_byte_id()];
+
+        assert_eq!(tuple_data, Err(CorruptedInput));
     }
 }

@@ -27,6 +27,9 @@ pub struct RelationData {
     /// A subset of above, they are the fields marked as keys, for when only keys
     /// are searched for
     pub key_fields: Vec<KeyField>,
+
+    /// The indexes of entries that are keys
+    pub key_indexes: Vec<usize>,
 }
 
 impl RelationData {
@@ -91,6 +94,12 @@ impl RelationData {
                         None
                     }
                 })
+                .collect(),
+
+            key_indexes: fields
+                .iter()
+                .enumerate()
+                .filter_map(|(i, f)| if f.is_key { Some(i) } else { None })
                 .collect(),
 
             inner: Relation {
@@ -281,6 +290,7 @@ mod test {
 
         let relation_manual = RelationData {
             key_fields: vec![key_field_id()],
+            key_indexes: vec![0],
             inner: Relation {
                 relation_oid: 1,
                 namespace: "public".to_string(),

@@ -31,6 +31,9 @@ pub enum DecoderError {
     #[error("The input is incomplete")]
     TruncatedInput,
 
+    #[error("Input has been corrupted")]
+    CorruptedInput,
+
     #[error("Wrong UTF-8 characters: {0}")]
     NonUtf8(#[from] Utf8Error),
 
@@ -49,4 +52,3 @@ pub enum DecoderError {
     #[error("Got a different kind of old tuple data in a message compared to the relation {0:?}")]
     WrongOldTupleKind(ReplicaKind),
 }
-

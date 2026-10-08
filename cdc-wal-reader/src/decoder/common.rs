@@ -29,7 +29,13 @@ pub fn get_old_tuple_data<'a>(
                 return Err(DecoderError::WrongOldTupleKind(ReplicaKind::Keys));
             }
 
-            let (keys, size) = tuple_data::parse(&data[1..], arena, &relation.key_fields)?;
+            let (keys, size) = tuple_data::parse_keys(
+                &data[1..],
+                arena,
+                &relation.key_fields,
+                &relation.key_indexes,
+                relation.inner.fields.len(),
+            )?;
             Ok((keys, size + 1))
         }
         b'O' => {
@@ -62,11 +68,9 @@ pub fn get_new_tuple_data<'a>(
 }
 
 #[cfg(test)]
-pub fn get_example_rel_map(
-    arena: &Bump,
-) -> std::collections::HashMap<u32, RelationData, RandomState> {
+pub fn get_example_rel_map() -> std::collections::HashMap<u32, RelationData, RandomState> {
     let mut relation_map = std::collections::HashMap::default();
-    relation_map.insert(1u32, get_example_rel_data(arena));
+    relation_map.insert(1u32, get_example_rel_data());
 
     relation_map
 }
@@ -95,13 +99,14 @@ pub fn get_example_rel() -> Relation {
 }
 
 #[cfg(test)]
-pub fn get_example_rel_data(arena: &Bump) -> RelationData {
+pub fn get_example_rel_data() -> RelationData {
     RelationData {
         inner: get_example_rel(),
         key_fields: vec![KeyField {
             name: "id".to_string(),
             kind: FieldKind::Int4,
         }],
+        key_indexes: vec![0],
     }
 }
 
@@ -145,6 +150,7 @@ pub fn get_example_rel_data_keys() -> RelationData {
             name: "id".to_string(),
             kind: FieldKind::Int4,
         }],
+        key_indexes: vec![0],
     }
 }
 
@@ -174,7 +180,7 @@ mod test {
 
         let arena = Bump::new();
 
-        let example_rel = get_example_rel_data(&arena);
+        let example_rel = get_example_rel_data();
 
         let old_tuple = get_old_tuple_data(&data, &example_rel, &arena);
         let old_tuple_manual = (vec![in &arena], 3);
@@ -209,7 +215,7 @@ mod test {
         ];
 
         let arena = Bump::new();
-        let example_rel = get_example_rel_data(&arena);
+        let example_rel = get_example_rel_data();
 
         let old_tuple = get_old_tuple_data(&data, &example_rel, &arena);
 
@@ -237,7 +243,7 @@ mod test {
 
         let arena = Bump::new();
 
-        let example_rel = get_example_rel_data(&arena);
+        let example_rel = get_example_rel_data();
 
         let new_tuple = get_new_tuple_data(&data, &example_rel.inner.fields, &arena);
         let new_tuple_manual = vec![
@@ -255,7 +261,7 @@ mod test {
 
         let arena = Bump::new();
 
-        let example_rel = get_example_rel_data(&arena);
+        let example_rel = get_example_rel_data();
 
         let new_tuple = get_old_tuple_data(&data, &example_rel, &arena);
 
@@ -281,7 +287,7 @@ mod test {
 
         let arena = Bump::new();
 
-        let example_rel = get_example_rel_data(&arena);
+        let example_rel = get_example_rel_data();
 
         let new_tuple = get_old_tuple_data(&data, &example_rel, &arena);
 
@@ -294,7 +300,7 @@ mod test {
 
         let arena = Bump::new();
 
-        let example_rel = get_example_rel_data(&arena);
+        let example_rel = get_example_rel_data();
 
         let new_tuple = get_new_tuple_data(&data, &example_rel.inner.fields, &arena);
 
@@ -307,7 +313,7 @@ mod test {
 
         let arena = Bump::new();
 
-        let example_rel = get_example_rel_data(&arena);
+        let example_rel = get_example_rel_data();
 
         let new_tuple = get_old_tuple_data(&data, &example_rel, &arena);
 
@@ -320,7 +326,7 @@ mod test {
 
         let arena = Bump::new();
 
-        let example_rel = get_example_rel_data(&arena);
+        let example_rel = get_example_rel_data();
 
         let new_tuple = get_new_tuple_data(&data, &example_rel.inner.fields, &arena);
 

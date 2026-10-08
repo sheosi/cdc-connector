@@ -37,6 +37,10 @@ pub fn parse<'a>(
         Err(e) => return Err(e),
     };
 
+    if data.len() < old_data_end + 5 {
+        return Err(DecoderError::TruncatedInput);
+    }
+
     let new_data = get_new_tuple_data(&data[old_data_end + 5..], &relation.inner.fields, &arena)?;
 
     let event = ChangeEvent {
@@ -78,6 +82,7 @@ mod test {
             // First col
             b'b', 0, 0, 0, 4, // Binary of size 4
             0, 0, 0, 1, // Int4: 1
+            b'n', b'n', // Rest of data
             // New tuple
             b'N', 0, 2, // First col
             b'b', 0, 0, 0, 4, // Binary of size 4
@@ -128,7 +133,7 @@ mod test {
 
         let arena = Bump::new();
 
-        let relation_map = common::get_example_rel_map(&arena);
+        let relation_map = common::get_example_rel_map();
 
         let event = parse(&data, &relation_map, &arena);
 
@@ -147,7 +152,7 @@ mod test {
             rel: 1,
         };
 
-        assert_eq!(event, Ok((event_example, &get_example_rel_data(&arena))));
+        assert_eq!(event, Ok((event_example, &get_example_rel_data())));
     }
 
     #[test]
@@ -172,13 +177,12 @@ mod test {
 
                 row: vec![ in &arena;
                     PgValue::Int4(1),
-                    PgValue::Text("hello"),
                 ],
             },
             rel: 1,
         };
 
-        assert_eq!(event, Ok((event_example, &get_example_rel_data(&arena))));
+        assert_eq!(event, Ok((event_example, &get_example_rel_data_keys())));
     }
 
     // Test errors
@@ -188,7 +192,7 @@ mod test {
 
         let arena = Bump::new();
 
-        let relation_map = common::get_example_rel_map(&arena);
+        let relation_map = common::get_example_rel_map();
 
         let event = parse(&data, &relation_map, &arena);
 
@@ -201,7 +205,7 @@ mod test {
 
         let arena = Bump::new();
 
-        let relation_map = common::get_example_rel_map(&arena);
+        let relation_map = common::get_example_rel_map();
 
         let event = parse(&data, &relation_map, &arena);
 
@@ -214,7 +218,7 @@ mod test {
 
         let arena = Bump::new();
 
-        let relation_map = common::get_example_rel_map(&arena);
+        let relation_map = common::get_example_rel_map();
 
         let event = parse(&data, &relation_map, &arena);
 

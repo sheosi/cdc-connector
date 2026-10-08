@@ -83,6 +83,7 @@ mod test {
                     },
                 ],
             },
+            key_indexes: std::vec![0],
             key_fields: vec![KeyField {
                 name: "id".to_string(),
                 kind: Int4,
@@ -112,7 +113,7 @@ mod test {
 
         let arena = Bump::new();
 
-        let relation_map = common::get_example_rel_map(&arena);
+        let relation_map = common::get_example_rel_map();
 
         let event = parse(&data, &relation_map, &arena);
 
@@ -126,7 +127,7 @@ mod test {
             rel: 1,
         };
 
-        assert_eq!(event, Ok((event_example, &get_example_rel_data(&arena))));
+        assert_eq!(event, Ok((event_example, &get_example_rel_data())));
     }
 
     #[test]
@@ -163,7 +164,7 @@ mod test {
 
         let arena = Bump::new();
 
-        let relation_map = get_example_rel_map(&arena);
+        let relation_map = get_example_rel_map();
 
         let event = parse(&data, &relation_map, &arena);
 
@@ -176,7 +177,7 @@ mod test {
 
         let arena = Bump::new();
 
-        let relation_map = get_example_rel_map(&arena);
+        let relation_map = get_example_rel_map();
 
         let event = parse(&data, &relation_map, &arena);
 
@@ -189,7 +190,7 @@ mod test {
 
         let arena = Bump::new();
 
-        let relation_map = get_example_rel_map(&arena);
+        let relation_map = get_example_rel_map();
 
         let event = parse(&data, &relation_map, &arena);
 
