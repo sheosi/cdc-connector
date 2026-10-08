@@ -162,7 +162,7 @@ fn parse_value<'a, F: FieldAccess>(
                     // Length is guaranteed by the `data.len() < 9` check above.
                     PgValue::Int4(i32::from_be_bytes(data[5..9].try_into().expect("")))
                 }
-                FieldKind::Text => todo!(),
+                FieldKind::Text => PgValue::Text(simdutf8::basic::from_utf8(&data[5..final_l])?),
             };
 
             Ok((bytes, final_l))
