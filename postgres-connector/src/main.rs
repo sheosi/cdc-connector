@@ -212,6 +212,7 @@ impl<'a> ToSql for ToSqlWrapper<'a> {
         match &self.0 {
             PgValue::Text(s) => s.to_sql(ty, out),
             PgValue::Int4(n) => n.to_sql(ty, out),
+            PgValue::Null => Ok(IsNull::Yes),
         }
     }
 
@@ -230,6 +231,7 @@ impl<'a> ToSql for ToSqlWrapper<'a> {
         match &self.0 {
             PgValue::Text(s) => s.to_sql_checked(ty, out),
             PgValue::Int4(n) => n.to_sql_checked(ty, out),
+            PgValue::Null => Ok(IsNull::Yes),
         }
     }
 }
