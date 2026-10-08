@@ -13,10 +13,17 @@ use testcontainers_modules::postgres::Postgres;
 use tokio::{join, process::Command as AsyncCommand, sync::Mutex};
 use tokio_postgres::{Client, Config, NoTls};
 
-fn build_crate(name: &str) -> AsyncCommand {
+async fn build_crate(name: &str) {
     let mut cmd = AsyncCommand::new("cargo");
     cmd.args(["build", "--bin", name]).current_dir("..");
-    cmd
+    if !cmd
+        .status()
+        .await
+        .expect("Failed to locate cargo")
+        .success()
+    {
+        panic!("Failed to buld crate")
+    }
 }
 
 pub struct Infra {
@@ -132,7 +139,7 @@ impl PostgresConnector {
             .env("PG_CONN_POSTGRES_USER", "cdc")
             .env("PG_CONN_POSTGRES_PASSWORD", "cdc")
             .env("PG_CONN_POSTGRES_PORT", "5401")
-            .env("PG_CONN_KAFKA_BROKERS", "localhost:909")
+            .env("PG_CONN_KAFKA_BROKERS", "localhost:9092")
             .env("PG_CONN_KAFKA_TOPIC", "example-topic")
             .env("PG_CONN_KAFKA_GROUP_ID", "default")
             .spawn()
@@ -277,31 +284,23 @@ pub async fn init_infra() -> Infra {
         .with_mapped_port(5401, ContainerPort::Tcp(5432))
         .start();
 
-    let cdc_producer_build = build_crate("cdc-producer").status();
-    let postgres_connector_build = build_crate("postgres-connector").status();
-    //let feldera_connector_build = build_crate("feldera-connector").status();
-
-    let (
-        res_redpanda,
-        res_src_postgres,
-        res_sink_postgres,
-        res_cdc_producer,
-        res_postgres_connector,
-    ) = join!(
+    let (res_redpanda, res_src_postgres, res_sink_postgres, _, _) = join!(
         redpanda,
         src_postgres,
         sink_postgres,
-        cdc_producer_build,
-        postgres_connector_build
+        build_crate("cdc-producer"),
+        build_crate("postgres-connector"),
+        //build_crate("feldera-connector")
     );
-
-    res_cdc_producer.expect("Failed to build cdc producer");
-    res_postgres_connector.expect("Failed to build postgres connector");
 
     // Wait for processes to be active
     std::thread::sleep(Duration::from_secs(1));
 
     let cdc_producer = CdcProducer::start();
+
+    // Wait for producer to be running
+    std::thread::sleep(Duration::from_secs(1));
+
     let postgres_connector = PostgresConnector::start();
 
     // Wait for processes to be active

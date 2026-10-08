@@ -12,6 +12,7 @@ use tokio_postgres::{
     tls::NoTlsStream,
     types::{IsNull, ToSql},
 };
+use tracing::debug;
 
 use crate::statements::{DeleteStatementCache, UpsertStatementCache};
 
