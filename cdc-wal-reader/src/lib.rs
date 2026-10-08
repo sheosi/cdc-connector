@@ -125,6 +125,7 @@ pub async fn start_wal_input<P: Producer>(
                         }
                     }
                     b'D' => {
+                        tracing::info!(?data);
                         // If not in a transaction because it was aborted, skip treating this
                         if currently_in_transaction {
                             send_to_producer(

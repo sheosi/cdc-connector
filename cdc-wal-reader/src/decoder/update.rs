@@ -183,7 +183,7 @@ mod test {
 
     // Test errors
     #[test]
-    fn no_event_id() {
+    fn no_relation_id() {
         let data = Bytes::from_static(&[b'U']);
 
         let arena = Bump::new();
@@ -193,19 +193,6 @@ mod test {
         let event = parse(&data, &relation_map, &arena);
 
         assert_eq!(event, Err(DecoderError::TruncatedInput))
-    }
-
-    #[test]
-    fn no_relation_id() {
-        let data = Bytes::from_static(&[b'U', 0, 0, 0, 0]);
-
-        let arena = Bump::new();
-
-        let relation_map = common::get_example_rel_map(&arena);
-
-        let event = parse(&data, &relation_map, &arena);
-
-        assert_eq!(event, Err(DecoderError::TruncatedInput));
     }
 
     #[test]
@@ -223,7 +210,7 @@ mod test {
 
     #[test]
     fn no_tuples() {
-        let data = Bytes::from_static(&[b'U', 0, 0, 0, 0, 0, 0, 0, 1]);
+        let data = Bytes::from_static(&[b'U', 0, 0, 0, 1]);
 
         let arena = Bump::new();
 

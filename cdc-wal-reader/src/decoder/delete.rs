@@ -45,10 +45,11 @@ pub fn parse<'a>(
 mod test {
     use std::collections::HashMap;
 
+    use ahash::RandomState;
     use bumpalo::{Bump, vec};
     use bytes::Bytes;
     use cdc_avro::{
-        PgValue,
+        Field, FieldKind, PgValue, Relation, ReplicaKind,
         arena::{ChangeEvent, Op},
     };
 
@@ -56,12 +57,59 @@ mod test {
         DecoderError,
         common::{self, get_example_rel_data, get_example_rel_data_keys},
         delete::parse,
+        relation::{KeyField, RelationData},
     };
+
+    fn get_tests_rel() -> Relation {
+        use bumpalo::collections::String;
+        Relation {
+            relation_oid: 16386,
+            name: "users".to_string(),
+            namespace: "public".to_string(),
+            replica_id: ReplicaKind::Keys,
+            fields: std::vec![
+                Field {
+                    name: "id".to_string(),
+                    is_key: true,
+                    kind: FieldKind::Int4,
+                },
+                Field {
+                    name: "name".to_string(),
+                    is_key: false,
+                    kind: FieldKind::Text,
+                },
+                Field {
+                    name: "email".to_string(),
+                    is_key: false,
+                    kind: FieldKind::Text,
+                },
+            ],
+        }
+    }
+
+    fn get_tests_rel_map(
+        arena: &Bump,
+    ) -> std::collections::HashMap<u32, RelationData, RandomState> {
+        let mut relation_map = std::collections::HashMap::default();
+        relation_map.insert(16386u32, get_tests_rel_data());
+
+        relation_map
+    }
+
+    fn get_tests_rel_data() -> RelationData {
+        RelationData {
+            inner: get_tests_rel(),
+            key_fields: std::vec![KeyField {
+                name: "id".to_string(),
+                kind: FieldKind::Int4,
+            }],
+        }
+    }
 
     #[test]
     pub fn simple_delete_key() {
         let data = Bytes::from_static(&[
-            b'D',0, 0, 0, 1, // Relation OID
+            b'D', 0, 0, 0, 1, // Relation OID
             b'K', 0, 1, // Two columns
             // First col
             b'b', 0, 0, 0, 4, // Binary of size 4
@@ -117,6 +165,37 @@ mod test {
     }
 
     #[test]
+    fn example1() {
+        let data = Bytes::from_static(&[
+            b'D', 0, 0, 0x40, 0x02, // D + relation OID 16386
+            b'K', 0, 0x03, // K + 3 columns
+            b'b', 0, 0, 0, 0x04, // id: binary, length 4
+            0, 0, 0, 0x04, // id value = 4
+            b'n', // name = NULL
+            b'n', // email = NULL
+        ]);
+
+        let arena = Bump::new();
+
+        let relation_map = get_tests_rel_map(&arena);
+
+        let event = parse(&data, &relation_map, &arena);
+
+        let event_example = ChangeEvent {
+            op: Op::Delete {
+                old: vec![in &arena;
+                    PgValue::Int4(1),
+                    PgValue::Text("hello")
+                ],
+            },
+            rel: 1,
+        };
+
+        assert_eq!(event, Ok((event_example, &get_example_rel_data(&arena))));
+    }
+
+    // Errors
+    #[test]
     fn empty() {
         let data = Bytes::from_static(&[]);
 
@@ -130,7 +209,7 @@ mod test {
     }
 
     #[test]
-    fn no_operation_id() {
+    fn no_relation_id() {
         let data = Bytes::from_static(&[b'D']);
 
         let arena = Bump::new();
@@ -143,21 +222,8 @@ mod test {
     }
 
     #[test]
-    fn no_relation_id() {
-        let data = Bytes::from_static(&[b'D', 0, 0, 0, 0]);
-
-        let arena = Bump::new();
-
-        let relation_map = common::get_example_rel_map(&arena);
-
-        let event = parse(&data, &relation_map, &arena);
-
-        assert_eq!(event, Err(DecoderError::TruncatedInput));
-    }
-
-    #[test]
     fn no_tuple() {
-        let data = Bytes::from_static(&[b'D', 0, 0, 0, 0, 0, 0, 0, 1]);
+        let data = Bytes::from_static(&[b'D', 0, 0, 0, 1]);
 
         let arena = Bump::new();
 
