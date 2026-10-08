@@ -128,6 +128,7 @@ impl Infra {
 impl Drop for Infra {
     fn drop(&mut self) {
         self._postgres_connector.kill();
+        self._cdc_producer.kill();
     }
 }
 

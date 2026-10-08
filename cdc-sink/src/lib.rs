@@ -158,7 +158,7 @@ impl KafkaClient {
 
         let mut stream = self.consumer.stream();
         while let Some(result) = stream.next().await {
-            tracing::info!("Got message");
+            tracing::debug!("Got message");
             match result {
                 Ok(borrowed_message) => {
                     if let Some(ts) = borrowed_message.timestamp().to_millis() {
