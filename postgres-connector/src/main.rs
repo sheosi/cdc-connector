@@ -13,7 +13,7 @@ use tokio_postgres::{
     types::{IsNull, ToSql},
 };
 
-use crate::statements::{DeleteStatementCache, InsertStatementCache, UpsertStatementCache};
+use crate::statements::{DeleteStatementCache, UpsertStatementCache};
 
 mod statements;
 
@@ -79,7 +79,6 @@ impl PostgresConfig {
 pub struct PostgresSink {
     client: tokio_postgres::Client,
     _conn: Connection<Socket, NoTlsStream>,
-    insert_stmt_cache: InsertStatementCache,
     upsert_stmt_cache: UpsertStatementCache,
     delete_stmt_cache: DeleteStatementCache,
     relation_cache: RelationCache,
@@ -95,7 +94,6 @@ impl PostgresSink {
         Ok(Self {
             client: clt,
             _conn,
-            insert_stmt_cache: InsertStatementCache::new(),
             upsert_stmt_cache: UpsertStatementCache::new(),
             delete_stmt_cache: DeleteStatementCache::new(),
             relation_cache: RelationCache::from_rels(&relations),
@@ -113,13 +111,8 @@ impl KafkaSink for PostgresSink {
         match event.op {
             Op::Insert { row } => {
                 let insert_stmt = self
-                    .insert_stmt_cache
-                    .get(
-                        &self.client,
-                        event.rel,
-                        &self.relation_cache.fields,
-                        &self.relation_cache.table_names,
-                    )
+                    .upsert_stmt_cache
+                    .get(&self.client, event.rel, &self.relation_cache, arena)
                     .await?;
 
                 // Confine this block to confine the reference to the arena
