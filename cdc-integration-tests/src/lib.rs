@@ -11,7 +11,7 @@ use testcontainers::{
 };
 use testcontainers_modules::postgres::Postgres;
 use tokio::{join, process::Command as AsyncCommand, sync::Mutex};
-use tokio_postgres::{Client, Config, Connection, NoTls, Socket, tls::NoTlsStream};
+use tokio_postgres::{Client, Config, NoTls};
 
 fn build_crate(name: &str) -> AsyncCommand {
     let mut cmd = AsyncCommand::new("cargo");
@@ -24,10 +24,10 @@ pub struct Infra {
     _red_panda: ContainerAsync<GenericImage>,
     _src_postgres: ContainerAsync<Postgres>,
     src_client: tokio_postgres::Client,
-    _src_conn: tokio_postgres::Connection<Socket, NoTlsStream>,
+    _src_conn: ConnTask,
     _sink_postgres: ContainerAsync<Postgres>,
     sink_client: tokio_postgres::Client,
-    _sink_conn: tokio_postgres::Connection<Socket, NoTlsStream>,
+    _sink_conn: ConnTask,
     _cdc_producer: CdcProducer,
     _postgres_connector: PostgresConnector,
 }
@@ -150,8 +150,16 @@ impl Drop for PostgresConnector {
     }
 }
 
-async fn create_conn(port: u16) -> (Client, Connection<Socket, NoTlsStream>) {
-    Config::new()
+struct ConnTask(tokio::task::JoinHandle<()>);
+
+impl Drop for ConnTask {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
+async fn create_conn(port: u16) -> (Client, ConnTask) {
+    let (clt, conn) = Config::new()
         .host("127.0.0.1")
         .port(port)
         .user("cdc")
@@ -159,7 +167,15 @@ async fn create_conn(port: u16) -> (Client, Connection<Socket, NoTlsStream>) {
         .dbname("cdc")
         .connect(NoTls)
         .await
-        .expect("Failed to create connection")
+        .expect("Failed to create connection");
+
+    let handle = tokio::spawn(async move {
+        if let Err(e) = conn.await {
+            eprintln!("connection error: {}", e);
+        }
+    });
+
+    (clt, ConnTask(handle))
 }
 
 async fn register_ids(ids: Vec<String>) {
