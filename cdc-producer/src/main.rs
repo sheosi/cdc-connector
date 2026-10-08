@@ -271,6 +271,8 @@ async fn check_topics(
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    tracing_subscriber::fmt::init();
+
     let own_config: ProducerConfig = config::Config::builder()
         .add_source(config::File::with_name("config/cdc-producer").required(false))
         .add_source(config::Environment::with_prefix("CDC_PROD").separator("_"))

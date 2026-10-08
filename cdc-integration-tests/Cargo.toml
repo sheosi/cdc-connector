@@ -11,6 +11,7 @@ testcontainers = "0.27.0"
 testcontainers-modules =  { version = "0.15.0", features = ["kafka", "postgres"] }
 tokio = { version = "1.53.2", features = ["macros", "rt", "signal"], default-features = false }
 tokio-postgres = "0.7.18"
+tracing-subscriber = "0.3.23"
 
 [dev-dependencies]
 serial_test = "4.0.1"

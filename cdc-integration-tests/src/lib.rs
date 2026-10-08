@@ -88,7 +88,7 @@ impl Infra {
 
         loop {
             if start.elapsed() > timeout_duration {
-                panic!("Row didn't appear in sink")
+                panic!("Row didn't appear in sink, clause: {}", where_clause)
             }
 
             match self
@@ -103,17 +103,27 @@ impl Infra {
         }
     }
 
-    pub async fn not_sink_row(&self, table: &str, where_clause: &str) {
+    pub async fn not_sink_row(&self, table: &str, where_clause: &str, timeout_duration: Duration) {
         let sql = format!("SELECT 1 FROM {} WHERE {}", table, where_clause);
 
-        if self
-            .sink_client
-            .query_opt(&sql, &[])
-            .await
-            .expect("Failed sink query")
-            .is_some()
-        {
-            panic!("Row is still present");
+        let start = Instant::now();
+
+        loop {
+            if start.elapsed() > timeout_duration {
+                panic!("Row didn't appear in sink")
+            }
+
+            match self
+                .sink_client
+                .query_opt(&sql, &[])
+                .await
+                .expect("Failed sink query")
+            {
+                Some(_) => {
+                    panic!("Row is still present")
+                }
+                None => tokio::time::sleep(Duration::from_millis(500)).await,
+            }
         }
     }
 
