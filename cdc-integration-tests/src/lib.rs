@@ -10,8 +10,13 @@ use testcontainers::{
     runners::AsyncRunner,
 };
 use testcontainers_modules::postgres::Postgres;
-use tokio::{join, process::Command as AsyncCommand, sync::Mutex};
-use tokio_postgres::{Client, Config, NoTls};
+use tokio::{
+    io::{AsyncRead, AsyncWrite},
+    join,
+    process::Command as AsyncCommand,
+    sync::Mutex,
+};
+use tokio_postgres::{Client, Config, Connection, NoTls};
 
 async fn build_crate(name: &str) {
     let mut cmd = AsyncCommand::new("cargo");
@@ -159,6 +164,22 @@ impl Drop for PostgresConnector {
 
 struct ConnTask(tokio::task::JoinHandle<()>);
 
+impl ConnTask {
+    fn spawn<S, T>(conn: Connection<S, T>) -> Self
+    where
+        S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+        T: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    {
+        let handle = tokio::spawn(async move {
+            if let Err(e) = conn.await {
+                eprintln!("connection error: {}", e);
+            }
+        });
+
+        Self(handle)
+    }
+}
+
 impl Drop for ConnTask {
     fn drop(&mut self) {
         self.0.abort();
@@ -176,13 +197,7 @@ async fn create_conn(port: u16) -> (Client, ConnTask) {
         .await
         .expect("Failed to create connection");
 
-    let handle = tokio::spawn(async move {
-        if let Err(e) = conn.await {
-            eprintln!("connection error: {}", e);
-        }
-    });
-
-    (clt, ConnTask(handle))
+    (clt, ConnTask::spawn(conn))
 }
 
 async fn register_ids(ids: Vec<String>) {

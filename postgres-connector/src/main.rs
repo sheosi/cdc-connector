@@ -7,9 +7,9 @@ use cdc_sink::{KafkaConfig, KafkaSink, MetricsConfig, SinkError, TableNames};
 use config::Config;
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
+use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_postgres::{
-    Connection, NoTls, Socket,
-    tls::NoTlsStream,
+    Connection, NoTls,
     types::{IsNull, ToSql},
 };
 use tracing::debug;
@@ -79,7 +79,7 @@ impl PostgresConfig {
 
 pub struct PostgresSink {
     client: tokio_postgres::Client,
-    _conn: Connection<Socket, NoTlsStream>,
+    _conn: ConnTask,
     upsert_stmt_cache: UpsertStatementCache,
     delete_stmt_cache: DeleteStatementCache,
     relation_cache: RelationCache,
@@ -90,11 +90,11 @@ impl PostgresSink {
         config: PostgresConfig,
         relations: HashMap<u32, Relation>,
     ) -> Result<Self, tokio_postgres::Error> {
-        let (clt, _conn) = tokio_postgres::connect(&config.to_postgres_string(), NoTls).await?;
+        let (clt, conn) = tokio_postgres::connect(&config.to_postgres_string(), NoTls).await?;
 
         Ok(Self {
             client: clt,
-            _conn,
+            _conn: ConnTask::spawn(conn),
             upsert_stmt_cache: UpsertStatementCache::new(),
             delete_stmt_cache: DeleteStatementCache::new(),
             relation_cache: RelationCache::from_rels(&relations),
@@ -337,4 +337,28 @@ fn extract_keys_ref<'a>(
 pub enum RelationIdentity {
     Full,
     Keys(HashSet<usize>),
+}
+
+struct ConnTask(tokio::task::JoinHandle<()>);
+
+impl ConnTask {
+    fn spawn<S, T>(conn: Connection<S, T>) -> Self
+    where
+        S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+        T: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    {
+        let handle = tokio::spawn(async move {
+            if let Err(e) = conn.await {
+                eprintln!("connection error: {}", e);
+            }
+        });
+
+        Self(handle)
+    }
+}
+
+impl Drop for ConnTask {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
 }
