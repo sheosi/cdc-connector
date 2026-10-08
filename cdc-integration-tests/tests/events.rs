@@ -87,17 +87,17 @@ async fn insert_delete() {
         .wait_for_sink_row("users", "name = 'a' AND email = 'a@x.com'", TWO_SECONDS)
         .await;
 
-    tokio::time::sleep(Duration::from_secs(3)).await;
-
     infra
         .exec_on_source(r#"DELETE FROM users WHERE name = 'a'"#)
         .await;
+
+    tokio::time::sleep(Duration::from_secs(3)).await;
 
     infra
         .not_sink_row("users", "name = 'a' AND email = 'a@x.com'", TWO_SECONDS)
         .await;
 }
-/*
+
 #[test]
 #[serial]
 async fn rollback_not_applied() {
@@ -114,9 +114,9 @@ async fn rollback_not_applied() {
     tokio::time::sleep(Duration::from_secs(3)).await;
 
     infra
-        .not_sink_row("users", "name = 'a' AND email = 'a@x.com'")
+        .not_sink_row("users", "name = 'a' AND email = 'a@x.com'", TWO_SECONDS)
         .await;
-}*/
+}
 
 /*#[test]
 #[serial]
