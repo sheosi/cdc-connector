@@ -37,8 +37,6 @@ path = "src/bin/relation_decode.rs"
 criterion = { version = "0.5", features = ["html_reports"] }
 
 
-[profile.bench]
-debug = true
 
 [[bench]]
 name = "decoding"

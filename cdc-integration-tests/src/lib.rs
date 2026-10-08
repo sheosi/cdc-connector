@@ -119,7 +119,7 @@ impl Infra {
 
     pub async fn exec_on_source(&self, query: &str) {
         self.src_client
-            .execute(query, &[])
+            .batch_execute(query)
             .await
             .expect("Failed to perform source statement");
     }
