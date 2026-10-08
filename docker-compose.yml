@@ -122,7 +122,7 @@ services:
       PG_CONN_POSTGRES_USER: "cdc"
       PG_CONN_POSTGRES_PASSWORD: "cdc"
       PG_CONN_POSTGRES_PORT: 5401
-      PG_CONN_KAFKA_BROKERS: ""
+      PG_CONN_KAFKA_BROKERS: "localhost:9092"
       PG_CONN_KAFKA_TOPIC: "example-topic"
       PG_CONN_KAFKA_GROUP_ID: "default"
 
