@@ -17,25 +17,27 @@ pub fn parse<'a>(
 ) -> Result<(ChangeEvent<'a>, &'a RelationData), DecoderError> {
     let start = Instant::now();
 
-    if data.len() < 9 {
+    if data.len() < 5 {
         return Err(DecoderError::TruncatedInput);
     }
 
-    /*let id = u32::from_be_bytes(
-        data[0..4]
-            .try_into()
-            .expect(""),
-    );*/
-
-    let relation_oid = u32::from_be_bytes(data[5..9].try_into().expect(""));
+    let relation_oid = u32::from_be_bytes(data[1..5].try_into().expect(""));
 
     let relation = relation_map
         .get(&relation_oid)
         .ok_or_else(|| DecoderError::UnknownRelation(relation_oid))?;
 
-    let (old, old_data_end) = get_old_tuple_data(&data[9..], &relation, &arena)?;
+    let (old, old_data_end) = match get_old_tuple_data(&data[5..], &relation, &arena) {
+        Ok(r) => r,
 
-    let new_data = get_new_tuple_data(&data[old_data_end + 9..], &relation.inner.fields, &arena)?;
+        // Just empty
+        Err(DecoderError::WrongOldTupleKey(b'N')) => {
+            ((bumpalo::collections::Vec::new_in(arena)), 0)
+        }
+        Err(e) => return Err(e),
+    };
+
+    let new_data = get_new_tuple_data(&data[old_data_end + 5..], &relation.inner.fields, &arena)?;
 
     let event = ChangeEvent {
         op: Op::Update { old, row: new_data },
@@ -70,8 +72,7 @@ mod test {
     #[test]
     fn simple_update_key() {
         let data = Bytes::from_static(&[
-            b'U', 0, 0, 0, 1, // Event ID
-            0, 0, 0, 1, // Relation OID
+            b'U', 0, 0, 0, 1, // Relation OID
             // Old tuple
             b'K', 0, 1, // Tuple with only key
             // First col
@@ -108,8 +109,7 @@ mod test {
     #[test]
     fn simple_update_object() {
         let data = Bytes::from_static(&[
-            b'U', 0, 0, 0, 1, // Event ID
-            0, 0, 0, 1, // Relation OID
+            b'U', 0, 0, 0, 1, // Relation OID
             b'O', 0, 2, // Return Old tuple
             // First col
             b'b', 0, 0, 0, 4, // Binary of size 4
@@ -150,6 +150,38 @@ mod test {
         assert_eq!(event, Ok((event_example, &get_example_rel_data(&arena))));
     }
 
+    #[test]
+    fn no_old_tuple() {
+        let data = Bytes::from_static(&[
+            b'U', 0, 0, 0, 1, // Relation OID
+            // Old tuple
+            b'N', 0, 1, // Tuple with only key
+            // First col
+            b'b', 0, 0, 0, 4, // Binary of size 4
+            0, 0, 0, 1, // Int4: 1
+        ]);
+
+        let arena = Bump::new();
+        let relation_map = common::get_example_rel_map_keys(&arena);
+
+        let event = parse(&data, &relation_map, &arena);
+
+        let event_example = ChangeEvent {
+            op: Op::Update {
+                old: vec![ in &arena;],
+
+                row: vec![ in &arena;
+                    PgValue::Int4(1),
+                    PgValue::Text("hello"),
+                ],
+            },
+            rel: 1,
+        };
+
+        assert_eq!(event, Ok((event_example, &get_example_rel_data(&arena))));
+    }
+
+    // Test errors
     #[test]
     fn no_event_id() {
         let data = Bytes::from_static(&[b'U']);
@@ -205,8 +237,7 @@ mod test {
     #[test]
     fn no_new_tuple() {
         let data = Bytes::from_static(&[
-            b'U', 0, 0, 0, 1, // Event ID
-            0, 0, 0, 1, // Relation OID
+            b'U', 0, 0, 0, 1, // Relation OID
             // Old tuple
             b'K', 0, 1, // Tuple with only key
             // First col

@@ -18,22 +18,17 @@ pub fn parse<'a>(
 ) -> Result<(ChangeEvent<'a>, &'a RelationData), DecoderError> {
     let start = Instant::now();
 
-    if data.len() < 9 {
+    if data.len() < 5 {
         return Err(DecoderError::TruncatedInput);
     }
 
-    /*let id = u32::from_be_bytes(
-        data[1..5]
-            .try_into()
-            .expect(""),
-    );*/
-    let relation_oid = u32::from_be_bytes(data[5..9].try_into().expect(""));
+    let relation_oid = u32::from_be_bytes(data[1..5].try_into().expect(""));
 
     let relation = relation_map
         .get(&relation_oid)
         .ok_or_else(|| DecoderError::UnknownRelation(relation_oid))?;
 
-    let (old, _) = get_old_tuple_data(&data[9..], &relation, arena)?;
+    let (old, _) = get_old_tuple_data(&data[5..], &relation, arena)?;
 
     let event = ChangeEvent {
         op: Op::Delete { old },
@@ -66,8 +61,7 @@ mod test {
     #[test]
     pub fn simple_delete_key() {
         let data = Bytes::from_static(&[
-            b'D', 0, 0, 0, 1, // Operation ID
-            0, 0, 0, 1, // Relation OID
+            b'D',0, 0, 0, 1, // Relation OID
             b'K', 0, 1, // Two columns
             // First col
             b'b', 0, 0, 0, 4, // Binary of size 4
@@ -93,8 +87,7 @@ mod test {
     #[test]
     pub fn simple_delete_object() {
         let data = Bytes::from_static(&[
-            b'D', 0, 0, 0, 1, // Operation ID
-            0, 0, 0, 1, // Relation OID
+            b'D', 0, 0, 0, 1, // Relation OID
             b'O', 0, 2, // Two columns
             // First col
             b'b', 0, 0, 0, 4, // Binary of size 4
