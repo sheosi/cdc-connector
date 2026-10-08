@@ -40,8 +40,34 @@ pub struct Infra {
     _sink_postgres: ContainerAsync<Postgres>,
     sink_client: tokio_postgres::Client,
     _sink_conn: ConnTask,
-    _cdc_producer: CdcProducer,
-    _postgres_connector: PostgresConnector,
+    _cdc_producer: TestBinary,
+    _postgres_connector: TestBinary,
+}
+
+struct TestBinary(Child);
+
+trait PrepareCommand {
+    fn prepare_cmd(&self) -> Command;
+}
+
+impl TestBinary {
+    fn spawn<C: PrepareCommand>(p: C) -> Self {
+        let child = p.prepare_cmd().spawn().expect("Failed to spawn binary");
+
+        Self(child)
+    }
+}
+
+impl Drop for TestBinary {
+    fn drop(&mut self) {
+        self.kill();
+    }
+}
+
+impl TestBinary {
+    fn kill(&mut self) {
+        self.0.kill().expect("Failed to kill cdc-producer child")
+    }
 }
 
 // Note: we register IDs, but dont unregister them, this is due to the fact that
@@ -99,14 +125,18 @@ impl Infra {
     }
 }
 
-pub struct CdcProducer {
-    child: Child,
+impl Drop for Infra {
+    fn drop(&mut self) {
+        self._postgres_connector.kill();
+    }
 }
 
-impl CdcProducer {
-    pub fn start() -> Self {
-        let child = Command::new("../target/debug/cdc-producer")
-            .env("CDC_PROD_WILL_CONNECT_TO_FELDERA", "false")
+pub struct CdcProducer {}
+
+impl PrepareCommand for CdcProducer {
+    fn prepare_cmd(&self) -> Command {
+        let mut cmd = Command::new("../target/debug/cdc-producer");
+        cmd.env("CDC_PROD_WILL_CONNECT_TO_FELDERA", "false")
             .env("CDC_PROD_POSTGRES_HOST", "localhost")
             .env("CDC_PROD_POSTGRES_USER", "cdc")
             .env("CDC_PROD_POSTGRES_PASSWORD", "cdc")
@@ -117,48 +147,26 @@ impl CdcProducer {
             .env("CDC_PROD_KAFKA_BROKERS", "localhost:9092")
             .env("CDC_PROD_KAFKA_TOPIC", "example-topic")
             .env("CDC_PROD_KAFKA_KEY", "default")
-            .env("CDC_PROD_POSTGRESS_DBNAME", "cdc")
-            .spawn()
-            .expect("Failed to spawn cdc-producer");
+            .env("CDC_PROD_POSTGRESS_DBNAME", "cdc");
 
-        Self { child }
+        cmd
     }
 }
 
-impl Drop for CdcProducer {
-    fn drop(&mut self) {
-        self.child
-            .kill()
-            .expect("Failed to kill cdc-producer child")
-    }
-}
+pub struct PostgresConnector {}
 
-pub struct PostgresConnector {
-    child: Child,
-}
-
-impl PostgresConnector {
-    pub fn start() -> Self {
-        let child = Command::new("../target/debug/postgres-connector")
-            .env("PG_CONN_POSTGRES_HOST", "127.0.0.1")
+impl PrepareCommand for PostgresConnector {
+    fn prepare_cmd(&self) -> Command {
+        let mut cmd = Command::new("../target/debug/postgres-connector");
+        cmd.env("PG_CONN_POSTGRES_HOST", "127.0.0.1")
             .env("PG_CONN_POSTGRES_USER", "cdc")
             .env("PG_CONN_POSTGRES_PASSWORD", "cdc")
             .env("PG_CONN_POSTGRES_PORT", "5401")
             .env("PG_CONN_KAFKA_BROKERS", "localhost:9092")
             .env("PG_CONN_KAFKA_TOPIC", "example-topic")
-            .env("PG_CONN_KAFKA_GROUP_ID", "default")
-            .spawn()
-            .expect("Failed to spawn postgres-connector");
+            .env("PG_CONN_KAFKA_GROUP_ID", "default");
 
-        Self { child }
-    }
-}
-
-impl Drop for PostgresConnector {
-    fn drop(&mut self) {
-        self.child
-            .kill()
-            .expect("Failed to kill postgres-connector child")
+        cmd
     }
 }
 
@@ -311,12 +319,12 @@ pub async fn init_infra() -> Infra {
     // Wait for processes to be active
     std::thread::sleep(Duration::from_secs(1));
 
-    let cdc_producer = CdcProducer::start();
+    let cdc_producer = TestBinary::spawn(CdcProducer {});
 
     // Wait for producer to be running
     std::thread::sleep(Duration::from_secs(1));
 
-    let postgres_connector = PostgresConnector::start();
+    let postgres_connector = TestBinary::spawn(PostgresConnector {});
 
     // Wait for processes to be active
     std::thread::sleep(Duration::from_secs(1));

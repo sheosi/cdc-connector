@@ -789,6 +789,7 @@ dependencies = [
 name = "cdc-integration-tests"
 version = "0.1.0"
 dependencies = [
+ "rdkafka",
  "serial_test",
  "testcontainers",
  "testcontainers-modules",

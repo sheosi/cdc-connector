@@ -6,6 +6,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+rdkafka = "0.39.0"
 testcontainers = "0.27.0"
 testcontainers-modules =  { version = "0.15.0", features = ["kafka", "postgres"] }
 tokio = { version = "1.53.2", features = ["macros", "rt", "signal"], default-features = false }
