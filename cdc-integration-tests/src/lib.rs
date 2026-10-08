@@ -1,12 +1,16 @@
 use std::{
+    collections::HashSet,
     process::{Child, Command},
+    sync::OnceLock,
     time::{Duration, Instant},
 };
 use testcontainers::{
-    ContainerAsync, GenericImage, Healthcheck, ImageExt, core::ContainerPort, runners::AsyncRunner,
+    ContainerAsync, GenericImage, Healthcheck, ImageExt,
+    core::{ContainerPort, client::docker_client_instance},
+    runners::AsyncRunner,
 };
 use testcontainers_modules::postgres::Postgres;
-use tokio::{join, process::Command as AsyncCommand};
+use tokio::{join, process::Command as AsyncCommand, sync::Mutex};
 use tokio_postgres::{Client, Config, Connection, NoTls, Socket, tls::NoTlsStream};
 
 fn build_crate(name: &str) -> AsyncCommand {
@@ -27,6 +31,12 @@ pub struct Infra {
     _cdc_producer: CdcProducer,
     _postgres_connector: PostgresConnector,
 }
+
+// Note: we register IDs, but dont unregister them, this is due to the fact that
+// we have to use async Mutex (since it is held across await), and using async in
+// drop is difficult, for the time being we'll just try to unregister everything
+// even those that are dead
+static RUNNING_IDS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
 
 impl Infra {
     pub async fn wait_for_sink_row(
@@ -152,6 +162,32 @@ async fn create_conn(port: u16) -> (Client, Connection<Socket, NoTlsStream>) {
         .expect("Failed to create connection")
 }
 
+async fn register_ids(ids: Vec<String>) {
+    let mut running_ids = RUNNING_IDS
+        .get_or_init(|| {
+            tokio::spawn(async move {
+                tokio::signal::ctrl_c().await.expect("ctrl+c");
+                for id in RUNNING_IDS.get().expect("").lock().await.iter() {
+                    docker_client_instance()
+                        .await
+                        .unwrap()
+                        .stop_container(id, None)
+                        .await
+                        .expect("Failed to stop container");
+                }
+
+                std::process::exit(130);
+            });
+            Mutex::new(HashSet::new())
+        })
+        .lock()
+        .await;
+
+    ids.into_iter().for_each(|id| {
+        running_ids.insert(id);
+    });
+}
+
 pub async fn init_infra() -> Infra {
     //let kafka = testcontainers_modules::kafka::Kafka::default().start();
     let redpanda =
@@ -258,11 +294,22 @@ pub async fn init_infra() -> Infra {
     let ((src_client, _src_conn), (sink_client, _sink_conn)) =
         join!(create_conn(5400), create_conn(5401));
 
+    let red_panda = res_redpanda.expect("Failed to init RedPanda");
+    let src_postgres = res_src_postgres.expect("Failed to init source Postgres");
+    let sink_postgres = res_sink_postgres.expect("Failed to init sink Postgres");
+
+    register_ids(vec![
+        red_panda.id().to_string(),
+        src_postgres.id().to_string(),
+        sink_postgres.id().to_string(),
+    ])
+    .await;
+
     Infra {
         //_kafka: res_kafka.expect("Failed to init Kafka"),
-        _red_panda: res_redpanda.expect("Failed to init RedPanda"),
-        _src_postgres: res_src_postgres.expect("Failed to init source Postgres"),
-        _sink_postgres: res_sink_postgres.expect("Failed to init sink Postgres"),
+        _red_panda: red_panda,
+        _src_postgres: src_postgres,
+        _sink_postgres: sink_postgres,
         _cdc_producer: cdc_producer,
         _postgres_connector: postgres_connector,
         src_client,
