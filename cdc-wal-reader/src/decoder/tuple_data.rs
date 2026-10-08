@@ -160,7 +160,7 @@ fn parse_value<'a, F: FieldAccess>(
                     }
 
                     // Length is guaranteed by the `data.len() < 9` check above.
-                    PgValue::Int4(u32::from_be_bytes(data[5..9].try_into().expect("")))
+                    PgValue::Int4(i32::from_be_bytes(data[5..9].try_into().expect("")))
                 }
                 FieldKind::Text => todo!(),
             };

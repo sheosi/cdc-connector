@@ -234,7 +234,7 @@ impl<'de> Deserialize<'de> for ReplicaKind {
 #[derive(Debug, Clone, PartialEq)]
 pub enum PgValue<'a> {
     Text(&'a str),
-    Int4(u32),
+    Int4(i32),
 }
 
 impl<'a> Serialize for PgValue<'a> {
@@ -276,7 +276,7 @@ impl<'de: 'a, 'a> Deserialize<'de> for PgValue<'a> {
                         Ok(PgValue::Text(value))
                     }
                     "Int4" => {
-                        let value: u32 = map.next_value()?;
+                        let value: i32 = map.next_value()?;
                         Ok(PgValue::Int4(value))
                     }
                     other => Err(serde::de::Error::custom(format!(
@@ -296,8 +296,8 @@ impl<'a> From<&'a str> for PgValue<'a> {
     }
 }
 
-impl From<u32> for PgValue<'_> {
-    fn from(value: u32) -> Self {
+impl From<i32> for PgValue<'_> {
+    fn from(value: i32) -> Self {
         Self::Int4(value)
     }
 }
