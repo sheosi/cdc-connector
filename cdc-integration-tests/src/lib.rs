@@ -51,6 +51,84 @@ pub struct Infra {
     pub postgres_connector: TestBinary,
 }
 
+impl Infra {
+    pub async fn wait_for_sink_row(
+        &self,
+        table: &str,
+        where_clause: &str,
+        timeout_duration: Duration,
+    ) {
+        let sql = format!("SELECT 1 FROM {} WHERE {}", table, where_clause);
+        let start = Instant::now();
+
+        loop {
+            if start.elapsed() > timeout_duration {
+                panic!("Row didn't appear in sink, clause: {}", where_clause)
+            }
+
+            match self
+                .sink_client
+                .query_opt(&sql, &[])
+                .await
+                .expect("Failed sink query")
+            {
+                Some(_) => return,
+                None => tokio::time::sleep(Duration::from_millis(500)).await,
+            }
+        }
+    }
+
+    pub async fn not_sink_row(&self, table: &str, where_clause: &str, timeout_duration: Duration) {
+        let sql = format!("SELECT 1 FROM {} WHERE {}", table, where_clause);
+
+        let start = Instant::now();
+
+        loop {
+            if start.elapsed() > timeout_duration {
+                break;
+            }
+
+            match self
+                .sink_client
+                .query_opt(&sql, &[])
+                .await
+                .expect("Failed sink query")
+            {
+                Some(_) => {
+                    panic!("Row is still present")
+                }
+                None => tokio::time::sleep(Duration::from_millis(500)).await,
+            }
+        }
+    }
+
+    pub async fn exec_on_source(&self, query: &str) {
+        self.src_client
+            .batch_execute(query)
+            .await
+            .expect("Failed to perform source statement");
+    }
+
+    pub async fn restart_producer(&mut self) {
+        self.cdc_producer.kill();
+        std::thread::sleep(Duration::from_secs_f32(0.5));
+        self.cdc_producer = TestBinary::spawn(CdcProducer {});
+    }
+
+    pub async fn restart_connector(&mut self) {
+        self.postgres_connector.kill();
+        std::thread::sleep(Duration::from_secs_f32(0.5));
+        self.postgres_connector = TestBinary::spawn(PostgresConnector {});
+    }
+}
+
+impl Drop for Infra {
+    fn drop(&mut self) {
+        self.postgres_connector.kill();
+        self.cdc_producer.kill();
+    }
+}
+
 pub struct TestBinary {
     child: Child,
     stdout: Arc<Mutex<Vec<String>>>,
@@ -124,78 +202,6 @@ impl Drop for TestBinary {
 // drop is difficult, for the time being we'll just try to unregister everything
 // even those that are dead
 static RUNNING_IDS: OnceLock<AsyncMutex<HashSet<String>>> = OnceLock::new();
-
-impl Infra {
-    pub async fn wait_for_sink_row(
-        &self,
-        table: &str,
-        where_clause: &str,
-        timeout_duration: Duration,
-    ) {
-        let sql = format!("SELECT 1 FROM {} WHERE {}", table, where_clause);
-        let start = Instant::now();
-
-        loop {
-            if start.elapsed() > timeout_duration {
-                panic!("Row didn't appear in sink, clause: {}", where_clause)
-            }
-
-            match self
-                .sink_client
-                .query_opt(&sql, &[])
-                .await
-                .expect("Failed sink query")
-            {
-                Some(_) => return,
-                None => tokio::time::sleep(Duration::from_millis(500)).await,
-            }
-        }
-    }
-
-    pub async fn not_sink_row(&self, table: &str, where_clause: &str, timeout_duration: Duration) {
-        let sql = format!("SELECT 1 FROM {} WHERE {}", table, where_clause);
-
-        let start = Instant::now();
-
-        loop {
-            if start.elapsed() > timeout_duration {
-                break;
-            }
-
-            match self
-                .sink_client
-                .query_opt(&sql, &[])
-                .await
-                .expect("Failed sink query")
-            {
-                Some(_) => {
-                    panic!("Row is still present")
-                }
-                None => tokio::time::sleep(Duration::from_millis(500)).await,
-            }
-        }
-    }
-
-    pub async fn exec_on_source(&self, query: &str) {
-        self.src_client
-            .batch_execute(query)
-            .await
-            .expect("Failed to perform source statement");
-    }
-
-    pub async fn restart_producer(&mut self) {
-        self.cdc_producer.kill();
-        std::thread::sleep(Duration::from_secs_f32(0.5));
-        self.cdc_producer = TestBinary::spawn(CdcProducer {});
-    }
-}
-
-impl Drop for Infra {
-    fn drop(&mut self) {
-        self.postgres_connector.kill();
-        self.cdc_producer.kill();
-    }
-}
 
 pub struct CdcProducer {}
 

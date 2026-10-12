@@ -167,6 +167,7 @@ async fn producer_restart_resumes_lsn() {
 
     assert!(read_lsn().await.expect("Failed to get LSN") > 1);
 
+    // Clear cdc-producer's output
     let _ = infra.cdc_producer.stdout_lines();
 
     infra.restart_producer().await;
@@ -180,13 +181,46 @@ async fn producer_restart_resumes_lsn() {
     assert!(!is_zero);
 }
 
-/*#[test]
+#[test]
 #[serial]
 async fn sink_restart_resumes_offset() {
-    let infra = init_infra(InfraOptions::default()).await;
+    let mut infra = init_infra(InfraOptions::default()).await;
 
-    // TODO: Check whether the consumer resumes from last offset
-}*/
+    infra
+        .exec_on_source(r#"INSERT INTO users (name, email) VALUES ('a', 'a@x.com');"#)
+        .await;
+
+    infra
+        .wait_for_sink_row("users", "name = 'a' AND email = 'a@x.com'", TWO_SECONDS)
+        .await;
+
+    // Clear postgres' connector out
+    let _ = infra.postgres_connector.stdout_lines();
+
+    infra.restart_connector().await;
+
+    // Insert B
+    infra
+        .exec_on_source(r#"INSERT INTO users (name, email) VALUES ('b', 'b@x.com');"#)
+        .await;
+
+    // Wait for B
+    infra
+        .wait_for_sink_row("users", "name = 'b' AND email = 'b@x.com'", TWO_SECONDS)
+        .await;
+
+    let new_lines = infra.postgres_connector.stdout_lines().join("\n");
+
+    assert!(
+        new_lines.contains("b@x.com"),
+        "Connector did not process B after restart"
+    );
+
+    assert!(
+        !new_lines.contains("a@x.com"),
+        "Connector reprocessed A from an old offset after restart"
+    );
+}
 
 #[test]
 #[serial]
@@ -275,10 +309,10 @@ async fn check_ordering() {
     let b = lines.b.expect("b@x.com not found");
     let c = lines.c.expect("c@x.com not found");
 
-    if c > b {
-        panic!("C came after B")
-    }
-    if b > a {
+    if a > b {
         panic!("B came after A")
+    }
+    if b > c {
+        panic!("C came after B")
     }
 }
