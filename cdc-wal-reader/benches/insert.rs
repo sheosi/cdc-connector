@@ -6,8 +6,6 @@ use bumpalo::Bump;
 use cdc_wal_reader::decoder;
 use cdc_wal_reader::decoder::relation::{KeyField, RelationData};
 use criterion::{Criterion, criterion_group, criterion_main};
-use memchr::memchr;
-use simdutf8::basic::from_utf8 as simd_from_utf8;
 
 const INSERT_DATA: [u8; 66] = [
     b'I', 0x00, 0x00, 0x30, 0x39, // OID 12345
@@ -36,7 +34,7 @@ fn bench(c: &mut Criterion) {
             replica_id: cdc_avro::ReplicaKind::Keys,
             name: "order_items".to_string(),
             namespace: "public".to_string(),
-            fields: vec![in &arena;
+            fields: std::vec![
                 Field {
                     is_key: true,
                     name: "id".to_string(),
@@ -69,10 +67,11 @@ fn bench(c: &mut Criterion) {
                 },
             ],
         },
-        key_fields: vec![in &arena; KeyField {
+        key_fields: std::vec![KeyField {
             name: "id".to_string(),
             kind: FieldKind::Int4,
         }],
+        key_indexes: std::vec![0],
     };
 
     let data = bytes::Bytes::from_static(&INSERT_DATA);

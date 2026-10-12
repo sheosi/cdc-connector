@@ -7,8 +7,8 @@ const RELATION_DATA: bytes::Bytes = bytes::Bytes::from_static(&[
     b'R', // Relation message
     0, 0, 40, 1, // Relation OID: 16385
     b'p', b'u', b'b', b'l', b'i', b'c', 0, // Namespace: public
-    b'o', b'r', b'd', b'e', b'r', b's', 0, // Relation name: orders
-    2, // Replica identity: 2 = Row/Full
+    b'o', b'r', b'd', b'e', b'r', b's', 0,    // Relation name: orders
+    b'd', // Replica identity: 2 = Row/Full
     0, 10, // Number of columns: 10
     // Column 1: order_id (key, Int4)
     1, b'o', b'r', b'd', b'e', b'r', b'_', b'i', b'd', 0, 0, 0, 0, 23, 255, 255, 255, 255,
