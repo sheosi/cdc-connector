@@ -20,6 +20,7 @@ async fn send_to_producer<'a, P>(
     event_res: Result<(ChangeEvent<'a>, &RelationData), DecoderError>,
     producer: &P,
     currently_in_transaction: &mut bool,
+    arena: &Bump,
 ) where
     P: Producer,
 {
@@ -35,7 +36,7 @@ async fn send_to_producer<'a, P>(
             metrics::counter!("cdc_events_produced_total", "op"=> kind, "table" =>relation.inner.name.to_string())
                 .increment(1);
 
-            if let Err(e) = producer.send(&relation.inner, event).await {
+            if let Err(e) = producer.send(&relation.inner, event, arena).await {
                 error!(error = e, "Kafka error");
 
                 metrics::counter!("cdc_produce_errors_total", "stage" => "send").increment(1);
@@ -89,7 +90,7 @@ pub async fn start_wal_input<P: Producer>(
 
     let mut client = ReplicationClient::connect(pg_config).await?;
 
-    let arena = Bump::with_capacity(1024);
+    let mut arena = Bump::with_capacity(1024);
     let mut relation_map = HashMap::<u32, RelationData, RandomState>::default();
     let mut currently_in_transaction = false;
 
@@ -120,8 +121,13 @@ pub async fn start_wal_input<P: Producer>(
                         if currently_in_transaction {
                             let insert = decoder::insert::parse(&data, &relation_map, &arena);
 
-                            send_to_producer(insert, &producer, &mut currently_in_transaction)
-                                .await;
+                            send_to_producer(
+                                insert,
+                                &producer,
+                                &mut currently_in_transaction,
+                                &arena,
+                            )
+                            .await;
                         }
                     }
                     b'D' => {
@@ -132,6 +138,7 @@ pub async fn start_wal_input<P: Producer>(
                                 decoder::delete::parse(&data, &relation_map, &arena),
                                 &producer,
                                 &mut currently_in_transaction,
+                                &arena,
                             )
                             .await;
                         }
@@ -143,6 +150,7 @@ pub async fn start_wal_input<P: Producer>(
                                 decoder::update::parse(&data, &relation_map, &arena),
                                 &producer,
                                 &mut currently_in_transaction,
+                                &arena,
                             )
                             .await;
                         }
@@ -208,6 +216,8 @@ pub async fn start_wal_input<P: Producer>(
             }
             ev => debug!("other: {:?}", ev),
         }
+
+        arena.reset();
     }
 
     // The connection was closed
@@ -284,6 +294,7 @@ pub trait Producer: Send {
         &self,
         relation: &Relation,
         event: ChangeEvent<'a>,
+        arena: &Bump,
     ) -> impl std::future::Future<Output = Result<(), String>>;
 
     fn on_relation(
