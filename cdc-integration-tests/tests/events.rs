@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use cdc_integration_tests::{InfraOptions, TWO_SECONDS, get_metrics_for, init_infra};
+use cdc_integration_tests::{InfraOptions, TWO_SECONDS, get_metrics_for, init_infra, read_lsn};
 use serial_test::serial;
 use tokio::test;
 
@@ -134,7 +134,7 @@ async fn rel_msg_pub() {
     }
 }
 
-/*#[test]
+#[test]
 #[serial]
 async fn lsn_checkpoint_persists() {
     let infra = init_infra(InfraOptions::default()).await;
@@ -148,8 +148,8 @@ async fn lsn_checkpoint_persists() {
         .wait_for_sink_row("users", "name = 'a' AND email = 'a@x.com'", TWO_SECONDS)
         .await;
 
-    // TODO: Check whether the lsn checkpoint persistss
-}*/
+    assert!(read_lsn().await.expect("Failed to get LSN") > 1);
+}
 
 /*#[test]
 #[serial]

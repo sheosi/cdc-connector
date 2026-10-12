@@ -96,8 +96,10 @@ impl CdcProducer for KafkaProducer {
         let lsn_payload = lsn.to_be_bytes();
 
         let lsn_future_record = FutureRecord::to(&self.lsn_topic)
-            .key(&self.key)
+            .key("lsn")
             .payload(&lsn_payload);
+
+        tracing::debug!(lsn, "Writing lsn");
 
         self.inner
             .send(lsn_future_record, Timeout::After(Duration::from_secs(5)))
@@ -174,11 +176,14 @@ async fn read_lsn(kafka_config: &KafkaConfig) -> Result<u64, rdkafka::error::Kaf
         .set("enable.partition.eof", "false")
         .set("session.timeout.ms", "6000")
         .set("isolation.level", "read_committed")
+        .set("auto.offset.reset", "earliest")
         .set_log_level(log_level)
         .create()
         .expect("Consumer creation failed");
 
     consumer.subscribe(&[&format!("{}.lsn", &kafka_config.topic)])?;
+
+    let mut latest_lsn = 0;
 
     // Loop and wait a bit until either a valid message is obtained or the timeout
     // activates and just start from 0
@@ -186,7 +191,9 @@ async fn read_lsn(kafka_config: &KafkaConfig) -> Result<u64, rdkafka::error::Kaf
         match tokio::time::timeout(Duration::from_millis(500), consumer.stream().next()).await {
             Ok(Some(Ok(msg))) => match msg.payload_view::<[u8]>() {
                 Some(Ok(lsn_bytes)) => match lsn_bytes.try_into() {
-                    Ok(lsn_slice) => return Ok(u64::from_be_bytes(lsn_slice)),
+                    Ok(lsn_slice) => {
+                        latest_lsn = u64::from_be_bytes(lsn_slice);
+                    }
                     Err(_) => {}
                 },
                 Some(Err(())) => {
@@ -197,11 +204,12 @@ async fn read_lsn(kafka_config: &KafkaConfig) -> Result<u64, rdkafka::error::Kaf
             },
             Ok(Some(Err(e))) => return Err(e),
             Ok(None) | Err(_) => {
-                tracing::info!("Lsn read timeout: starting from 0");
-                return Ok(0);
+                break;
             }
         }
     }
+
+    Ok(latest_lsn)
 }
 
 async fn ensure_topic(

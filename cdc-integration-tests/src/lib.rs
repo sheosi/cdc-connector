@@ -1,3 +1,9 @@
+use futures_util::StreamExt;
+use rdkafka::{
+    ClientConfig, Message,
+    config::RDKafkaLogLevel,
+    consumer::{Consumer, StreamConsumer},
+};
 use std::{
     collections::HashSet,
     io::{BufRead, BufReader},
@@ -202,7 +208,8 @@ impl PrepareCommand for CdcProducer {
             .env("CDC_PROD_KAFKA_TOPIC", "example-topic")
             .env("CDC_PROD_KAFKA_KEY", "default")
             .env("CDC_PROD_POSTGRESS_DBNAME", "cdc")
-            .env("CDC_PROD_METRICS_PORT", "9001");
+            .env("CDC_PROD_METRICS_PORT", "9001")
+            .env("RUST_LOG", "debug");
 
         cmd
     }
@@ -431,6 +438,57 @@ pub async fn init_infra(options: InfraOptions) -> Infra {
         sink_client,
         _sink_conn,
     }
+}
+
+pub async fn read_lsn() -> Result<u64, rdkafka::error::KafkaError> {
+    let log_level = if cfg!(debug_assertions) {
+        RDKafkaLogLevel::Debug
+    } else {
+        RDKafkaLogLevel::Info
+    };
+
+    let consumer: StreamConsumer = ClientConfig::new()
+        .set("group.id", "test-lsn-read".to_string())
+        .set("bootstrap.servers", "localhost:9092")
+        .set("enable.partition.eof", "false")
+        .set("session.timeout.ms", "6000")
+        .set("isolation.level", "read_committed")
+        .set("auto.offset.reset", "earliest")
+        .set_log_level(log_level)
+        .create()
+        .expect("Consumer creation failed");
+
+    consumer.subscribe(&[&"example-topic.lsn"])?;
+
+    let mut latest_lsn = 0;
+
+    // Loop and wait a bit until either a valid message is obtained or the timeout
+    // activates and just start from 0. Note that this reads all available lsn messages
+    // and takes just the last one, while by default we take measures to leave only
+    // one LSN message, this provides some protection in case that is changed.
+    loop {
+        match tokio::time::timeout(Duration::from_millis(500), consumer.stream().next()).await {
+            Ok(Some(Ok(msg))) => match msg.payload_view::<[u8]>() {
+                Some(Ok(lsn_bytes)) => match lsn_bytes.try_into() {
+                    Ok(lsn_slice) => {
+                        latest_lsn = u64::from_be_bytes(lsn_slice);
+                    }
+                    Err(_) => {}
+                },
+                Some(Err(())) => {
+                    // This shouldn't fail
+                    panic!("");
+                }
+                None => {}
+            },
+            Ok(Some(Err(e))) => return Err(e),
+            Ok(None) | Err(_) => {
+                break;
+            }
+        }
+    }
+
+    Ok(latest_lsn)
 }
 
 pub const TWO_SECONDS: Duration = Duration::from_secs(2);

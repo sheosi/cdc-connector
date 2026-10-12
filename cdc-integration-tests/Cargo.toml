@@ -6,6 +6,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+futures-util = "0.3.34"
 rdkafka = "0.39.0"
 reqwest = "0.13.5"
 testcontainers = "0.27.0"
