@@ -201,7 +201,8 @@ impl PrepareCommand for CdcProducer {
             .env("CDC_PROD_KAFKA_BROKERS", "localhost:9092")
             .env("CDC_PROD_KAFKA_TOPIC", "example-topic")
             .env("CDC_PROD_KAFKA_KEY", "default")
-            .env("CDC_PROD_POSTGRESS_DBNAME", "cdc");
+            .env("CDC_PROD_POSTGRESS_DBNAME", "cdc")
+            .env("CDC_PROD_METRICS_PORT", "9001");
 
         cmd
     }
@@ -219,6 +220,7 @@ impl PrepareCommand for PostgresConnector {
             .env("PG_CONN_KAFKA_BROKERS", "localhost:9092")
             .env("PG_CONN_KAFKA_TOPIC", "example-topic")
             .env("PG_CONN_KAFKA_GROUP_ID", "default")
+            .env("PG_CONN_METRICS_PORT", "9002")
             .env("RUST_LOG", "debug");
 
         cmd
@@ -299,6 +301,13 @@ impl Default for InfraOptions {
             pg_connector_json: false,
         }
     }
+}
+
+pub async fn get_metrics_for(port: u16) -> Result<String, reqwest::Error> {
+    reqwest::get(format!("http://localhost:{}/metrics", port))
+        .await?
+        .text()
+        .await
 }
 
 pub async fn init_infra(options: InfraOptions) -> Infra {

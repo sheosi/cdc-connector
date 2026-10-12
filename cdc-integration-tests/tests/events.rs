@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use cdc_integration_tests::{InfraOptions, TWO_SECONDS, init_infra};
+use cdc_integration_tests::{InfraOptions, TWO_SECONDS, get_metrics_for, init_infra};
 use serial_test::serial;
 use tokio::test;
 
@@ -176,7 +176,7 @@ async fn sink_restart_resumes_offset() {
     // TODO: Check whether the consumer resumes from last offset
 }*/
 
-/*#[test]
+#[test]
 #[serial]
 async fn check_metrics() {
     let infra = init_infra(InfraOptions::default()).await;
@@ -190,8 +190,13 @@ async fn check_metrics() {
         .wait_for_sink_row("users", "name = 'a' AND email = 'a@x.com'", TWO_SECONDS)
         .await;
 
-    // TODO: check :9000/metric cdc_events_produced_total > 0
-}*/
+    let cdc_prod_metrics = get_metrics_for(9001)
+        .await
+        .expect("Failed to get cdc-prod metrics");
+    let pg_conn_metrics = get_metrics_for(9002)
+        .await
+        .expect("Failed to pg-conn metrics");
+}
 
 #[test]
 #[serial]

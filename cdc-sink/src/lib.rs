@@ -237,7 +237,7 @@ pub fn init_metrics(config: MetricsConfig) {
     let builder = metrics_exporter_prometheus::PrometheusBuilder::new();
     builder
         .with_http_listener(addr)
-        .install_recorder()
+        .install()
         .expect("Failed to install recorder");
     metrics::describe_counter!(
         "cdc_events_consumed_total",
