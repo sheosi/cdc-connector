@@ -47,7 +47,7 @@ pub struct Infra {
     _sink_postgres: ContainerAsync<Postgres>,
     sink_client: tokio_postgres::Client,
     _sink_conn: ConnTask,
-    _cdc_producer: TestBinary,
+    pub cdc_producer: TestBinary,
     pub postgres_connector: TestBinary,
 }
 
@@ -182,12 +182,18 @@ impl Infra {
             .await
             .expect("Failed to perform source statement");
     }
+
+    pub async fn restart_producer(&mut self) {
+        self.cdc_producer.kill();
+        std::thread::sleep(Duration::from_secs_f32(0.5));
+        self.cdc_producer = TestBinary::spawn(CdcProducer {});
+    }
 }
 
 impl Drop for Infra {
     fn drop(&mut self) {
         self.postgres_connector.kill();
-        self._cdc_producer.kill();
+        self.cdc_producer.kill();
     }
 }
 
@@ -431,7 +437,7 @@ pub async fn init_infra(options: InfraOptions) -> Infra {
         _red_panda: red_panda,
         _src_postgres: src_postgres,
         _sink_postgres: sink_postgres,
-        _cdc_producer: cdc_producer,
+        cdc_producer,
         postgres_connector,
         src_client,
         _src_conn,

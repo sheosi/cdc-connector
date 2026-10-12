@@ -336,6 +336,8 @@ async fn main() -> Result<()> {
         .await
         .expect("Failed to read lsn");
 
+    tracing::info!(starting_lsn = lsn);
+
     cdc_wal_reader::start_wal_input(
         own_config.postgres,
         lsn,

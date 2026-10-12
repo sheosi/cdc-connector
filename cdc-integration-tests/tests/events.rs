@@ -151,10 +151,10 @@ async fn lsn_checkpoint_persists() {
     assert!(read_lsn().await.expect("Failed to get LSN") > 1);
 }
 
-/*#[test]
+#[test]
 #[serial]
 async fn producer_restart_resumes_lsn() {
-    let infra = init_infra(InfraOptions::default()).await;
+    let mut infra = init_infra(InfraOptions::default()).await;
 
     // First insert
     infra
@@ -165,8 +165,20 @@ async fn producer_restart_resumes_lsn() {
         .wait_for_sink_row("users", "name = 'a' AND email = 'a@x.com'", TWO_SECONDS)
         .await;
 
-    // TODO: Check whether the producer resumes from last LSN
-}*/
+    assert!(read_lsn().await.expect("Failed to get LSN") > 1);
+
+    let _ = infra.cdc_producer.stdout_lines();
+
+    infra.restart_producer().await;
+
+    let is_zero = infra
+        .cdc_producer
+        .stdout_lines()
+        .into_iter()
+        .any(|l| l.contains("starting_lsn=0"));
+
+    assert!(!is_zero);
+}
 
 /*#[test]
 #[serial]
@@ -193,9 +205,14 @@ async fn check_metrics() {
     let cdc_prod_metrics = get_metrics_for(9001)
         .await
         .expect("Failed to get cdc-prod metrics");
+
+    assert!(!cdc_prod_metrics.is_empty());
+
     let pg_conn_metrics = get_metrics_for(9002)
         .await
         .expect("Failed to pg-conn metrics");
+
+    assert!(!pg_conn_metrics.is_empty());
 }
 
 #[test]
