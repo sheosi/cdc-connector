@@ -51,6 +51,8 @@ impl RelationData {
         }
 
         let replica_id_pos = 5 + namespace.len() + 1 + relname.len() + 1;
+
+        // The replica ID is in ASCII
         let replica_id = match data[replica_id_pos] {
             b'd' => ReplicaKind::Keys,
             b'f' => ReplicaKind::Row,
@@ -191,55 +193,82 @@ fn kind_from_oid_mod(t_oid: u32, t_mod: u32) -> Result<FieldKind, DecoderError> 
     }
 }
 
+/// Finds the size of a Cstring by find the first null character '0' in the slice
+/// provided. If not found returns None. Optimized to use SIMD (SSE2) on X86-64 and
+/// scalar (but should stilll be pretty fast) everywhere else.
 fn find_null_word(data: &[u8]) -> Option<usize> {
-    use std::arch::x86_64::{
-        __m128i, _mm_cmpeq_epi8, _mm_loadu_si128, _mm_movemask_epi8, _mm_setzero_si128,
-    };
-    use std::cmp::min;
+    // We are making use of an SSE2-optimized find null word code. SSE2 is available
+    // on all Rust x86-64 targets
+    #[cfg(target_arch = "x86_64")]
+    {
+        use std::arch::x86_64::{
+            __m128i, _mm_cmpeq_epi8, _mm_loadu_si128, _mm_movemask_epi8, _mm_setzero_si128,
+        };
+        use std::cmp::min;
 
-    let len = data.len();
+        let len = data.len();
 
-    // Fast path: strings shorter than 16 bytes
-    if len < 16 {
-        let mut buf = [0xFFu8; 16];
-        buf[..len].copy_from_slice(&data[..len]);
+        // Fast path: strings shorter than 16 bytes
+        if len < 16 {
+            let mut buf = [0xFFu8; 16];
+            buf[..len].copy_from_slice(&data[..len]);
+            unsafe {
+                let chunk = _mm_loadu_si128(buf.as_ptr() as *const __m128i);
+                let mask = _mm_movemask_epi8(_mm_cmpeq_epi8(chunk, _mm_setzero_si128()));
+                if mask != 0 {
+                    return Some(mask.trailing_zeros() as usize);
+                }
+            }
+            return None;
+        }
+
         unsafe {
-            let chunk = _mm_loadu_si128(buf.as_ptr() as *const __m128i);
-            let mask = _mm_movemask_epi8(_mm_cmpeq_epi8(chunk, _mm_setzero_si128()));
+            let ptr = data.as_ptr() as *const __m128i;
+            let chunk = _mm_loadu_si128(ptr); // movdqu
+
+            let zeros = _mm_setzero_si128();
+            let cmp = _mm_cmpeq_epi8(chunk, zeros); // 0xFF where byte == 0
+            let mask = _mm_movemask_epi8(cmp); // 16-bit mask
+
             if mask != 0 {
                 return Some(mask.trailing_zeros() as usize);
             }
         }
-        return None;
-    }
 
-    unsafe {
-        let ptr = data.as_ptr() as *const __m128i;
-        let chunk = _mm_loadu_si128(ptr); // movdqu
+        // General case: strings longer than 16 bytes
+        let mut i = 24; // This i is the last_position
+        while i <= len + 7 {
+            let boundary = min(i, len);
+            let word = u64::from_ne_bytes(data[boundary - 8..boundary].try_into().expect(""));
+            let mask = word.wrapping_sub(0x0101010101010101) & !word & 0x8080808080808080;
 
-        let zeros = _mm_setzero_si128();
-        let cmp = _mm_cmpeq_epi8(chunk, zeros); // 0xFF where byte == 0
-        let mask = _mm_movemask_epi8(cmp); // 16-bit mask
-
-        if mask != 0 {
-            return Some(mask.trailing_zeros() as usize);
+            if mask != 0 {
+                return Some((boundary - 8) + (mask.trailing_zeros() / 8) as usize);
+            }
+            i += 8;
         }
+
+        None
     }
 
-    // General case: strings longer than 16 bytes
-    let mut i = 24; // This i is the last_position
-    while i <= len + 7 {
-        let boundary = min(i, len);
-        let word = u64::from_ne_bytes(data[boundary - 8..boundary].try_into().expect(""));
-        let mask = word.wrapping_sub(0x0101010101010101) & !word & 0x8080808080808080;
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        let len = data.len();
 
-        if mask != 0 {
-            return Some((boundary - 8) + (mask.trailing_zeros() / 8) as usize);
+        // 8-byte zero-byte detection trick
+        let mut i = 0;
+        while i + 8 <= len {
+            let word = u64::from_ne_bytes(data[i..i + 8].try_into().expect(""));
+            let mask = word.wrapping_sub(0x0101010101010101) & !word & 0x8080808080808080;
+            if mask != 0 {
+                return Some(i + (mask.trailing_zeros() / 8) as usize);
+            }
+            i += 8;
         }
-        i += 8;
-    }
 
-    None
+        // Tail
+        data[i..].iter().position(|&b| b == 0).map(|j| i + j)
+    }
 }
 
 #[cfg(test)]
