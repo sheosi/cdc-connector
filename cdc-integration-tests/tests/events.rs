@@ -1,19 +1,17 @@
 use std::time::Duration;
 
-use cdc_integration_tests::{TWO_SECONDS, init_infra};
+use cdc_integration_tests::{InfraOptions, TWO_SECONDS, init_infra};
 use serial_test::serial;
 use tokio::test;
 
 #[test]
 #[serial]
 async fn simple_insert() {
-    let infra = init_infra().await;
+    let infra = init_infra(InfraOptions::default()).await;
 
     infra
         .exec_on_source("INSERT INTO users (name, email) VALUES ('e2e', 'e2e@test.com')")
         .await;
-
-    std::thread::sleep(Duration::from_secs(10));
 
     infra
         .wait_for_sink_row(
@@ -27,7 +25,7 @@ async fn simple_insert() {
 #[test]
 #[serial]
 async fn multiple_inserts() {
-    let infra = init_infra().await;
+    let infra = init_infra(InfraOptions::default()).await;
 
     infra
         .exec_on_source(
@@ -51,7 +49,7 @@ async fn multiple_inserts() {
 #[test]
 #[serial]
 async fn insert_update() {
-    let infra = init_infra().await;
+    let infra = init_infra(InfraOptions::default()).await;
 
     infra
         .exec_on_source(r#"INSERT INTO users (name, email) VALUES ('a', 'a@x.com');"#)
@@ -77,7 +75,7 @@ async fn insert_update() {
 #[test]
 #[serial]
 async fn insert_delete() {
-    let infra = init_infra().await;
+    let infra = init_infra(InfraOptions::default()).await;
 
     infra
         .exec_on_source(r#"INSERT INTO users (name, email) VALUES ('a', 'a@x.com');"#)
@@ -101,7 +99,7 @@ async fn insert_delete() {
 #[test]
 #[serial]
 async fn rollback_not_applied() {
-    let infra = init_infra().await;
+    let infra = init_infra(InfraOptions::default()).await;
 
     infra
         .exec_on_source(
@@ -118,18 +116,28 @@ async fn rollback_not_applied() {
         .await;
 }
 
-/*#[test]
+#[test]
 #[serial]
 async fn rel_msg_pub() {
-    let infra = init_infra().await;
+    let infra = init_infra(InfraOptions::default()).await;
 
-    // TODO check for published relation message
-}*/
+    std::thread::sleep(Duration::from_secs(10));
+
+    if infra
+        .postgres_connector
+        .stdout_lines()
+        .iter()
+        .find(|l| l.contains("Got relation"))
+        .is_none()
+    {
+        panic!("Relation not found");
+    }
+}
 
 /*#[test]
 #[serial]
 async fn lsn_checkpoint_persists() {
-    let infra = init_infra().await;
+    let infra = init_infra(InfraOptions::default()).await;
 
     // First make an event
     infra
@@ -146,7 +154,7 @@ async fn lsn_checkpoint_persists() {
 /*#[test]
 #[serial]
 async fn producer_restart_resumes_lsn() {
-    let infra = init_infra().await;
+    let infra = init_infra(InfraOptions::default()).await;
 
     // First insert
     infra
@@ -163,7 +171,7 @@ async fn producer_restart_resumes_lsn() {
 /*#[test]
 #[serial]
 async fn sink_restart_resumes_offset() {
-    let infra = init_infra().await;
+    let infra = init_infra(InfraOptions::default()).await;
 
     // TODO: Check whether the consumer resumes from last offset
 }*/
@@ -171,7 +179,7 @@ async fn sink_restart_resumes_offset() {
 /*#[test]
 #[serial]
 async fn check_metrics() {
-    let infra = init_infra().await;
+    let infra = init_infra(InfraOptions::default()).await;
 
     // First insert
     infra
@@ -188,14 +196,19 @@ async fn check_metrics() {
 /*#[test]
 #[serial]
 async fn check_ordering() {
-    let infra = init_infra().await;
+    let infra = init_infra(InfraOptions {
+        pg_connector_json: true,
+    })
+    .await;
 
-    infra.exec_on_source(r#"
+    infra
+        .exec_on_source(
+            r#"
         BEGIN;
         INSERT INTO users (name, email) VALUES ('a', 'a@x.com');
         INSERT INTO users (name, email) VALUES ('b', 'b@x.com');
         INSERT INTO users (name, email) VALUES ('c', 'c@x.com');
-        COMMIT;"#).await;
-
-    // TODO: check sink sees them in order
+        COMMIT;"#,
+        )
+        .await;
 }*/

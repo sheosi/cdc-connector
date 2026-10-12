@@ -1,7 +1,8 @@
 use std::{
     collections::HashSet,
-    process::{Child, Command},
-    sync::OnceLock,
+    io::{BufRead, BufReader},
+    process::{Child, Command, Stdio},
+    sync::{Arc, Mutex, OnceLock},
     time::{Duration, Instant},
 };
 use testcontainers::{
@@ -14,7 +15,7 @@ use tokio::{
     io::{AsyncRead, AsyncWrite},
     join,
     process::Command as AsyncCommand,
-    sync::Mutex,
+    sync::Mutex as AsyncMutex,
 };
 use tokio_postgres::{Client, Config, Connection, NoTls};
 
@@ -41,10 +42,14 @@ pub struct Infra {
     sink_client: tokio_postgres::Client,
     _sink_conn: ConnTask,
     _cdc_producer: TestBinary,
-    _postgres_connector: TestBinary,
+    pub postgres_connector: TestBinary,
 }
 
-struct TestBinary(Child);
+pub struct TestBinary {
+    child: Child,
+    stdout: Arc<Mutex<Vec<String>>>,
+    stderr: Arc<Mutex<Vec<String>>>,
+}
 
 trait PrepareCommand {
     fn prepare_cmd(&self) -> Command;
@@ -52,9 +57,53 @@ trait PrepareCommand {
 
 impl TestBinary {
     fn spawn<C: PrepareCommand>(p: C) -> Self {
-        let child = p.prepare_cmd().spawn().expect("Failed to spawn binary");
+        let mut cmd = p.prepare_cmd();
+        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
 
-        Self(child)
+        let mut child = cmd.spawn().expect("Failed to spawn binary");
+
+        let stdout = Arc::new(Mutex::new(Vec::new()));
+        let stderr = Arc::new(Mutex::new(Vec::new()));
+
+        if let Some(out) = child.stdout.take() {
+            let buf = stdout.clone();
+            std::thread::spawn(move || {
+                for line in BufReader::new(out).lines().flatten() {
+                    println!("[stdout] {line}");
+                    buf.lock().unwrap().push(line);
+                }
+            });
+        }
+
+        if let Some(err) = child.stderr.take() {
+            let buf = stderr.clone();
+            std::thread::spawn(move || {
+                for line in BufReader::new(err).lines().flatten() {
+                    eprintln!("[stderr] {line}");
+                    buf.lock().unwrap().push(line);
+                }
+            });
+        }
+
+        Self {
+            child,
+            stdout,
+            stderr,
+        }
+    }
+
+    pub fn stdout_lines(&self) -> Vec<String> {
+        self.stdout.lock().unwrap().clone()
+    }
+
+    pub fn stderr_lines(&self) -> Vec<String> {
+        self.stderr.lock().unwrap().clone()
+    }
+
+    fn kill(&mut self) {
+        self.child
+            .kill()
+            .expect("Failed to kill cdc-producer child")
     }
 }
 
@@ -64,17 +113,11 @@ impl Drop for TestBinary {
     }
 }
 
-impl TestBinary {
-    fn kill(&mut self) {
-        self.0.kill().expect("Failed to kill cdc-producer child")
-    }
-}
-
 // Note: we register IDs, but dont unregister them, this is due to the fact that
 // we have to use async Mutex (since it is held across await), and using async in
 // drop is difficult, for the time being we'll just try to unregister everything
 // even those that are dead
-static RUNNING_IDS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+static RUNNING_IDS: OnceLock<AsyncMutex<HashSet<String>>> = OnceLock::new();
 
 impl Infra {
     pub async fn wait_for_sink_row(
@@ -137,7 +180,7 @@ impl Infra {
 
 impl Drop for Infra {
     fn drop(&mut self) {
-        self._postgres_connector.kill();
+        self.postgres_connector.kill();
         self._cdc_producer.kill();
     }
 }
@@ -235,7 +278,7 @@ async fn register_ids(ids: Vec<String>) {
 
                 std::process::exit(130);
             });
-            Mutex::new(HashSet::new())
+            AsyncMutex::new(HashSet::new())
         })
         .lock()
         .await;
@@ -245,7 +288,19 @@ async fn register_ids(ids: Vec<String>) {
     });
 }
 
-pub async fn init_infra() -> Infra {
+pub struct InfraOptions {
+    pub pg_connector_json: bool,
+}
+
+impl Default for InfraOptions {
+    fn default() -> Self {
+        Self {
+            pg_connector_json: false,
+        }
+    }
+}
+
+pub async fn init_infra(options: InfraOptions) -> Infra {
     //let kafka = testcontainers_modules::kafka::Kafka::default().start();
     let redpanda =
         testcontainers::GenericImage::new("docker.redpanda.com/redpandadata/redpanda", "v24.2.9")
@@ -360,7 +415,7 @@ pub async fn init_infra() -> Infra {
         _src_postgres: src_postgres,
         _sink_postgres: sink_postgres,
         _cdc_producer: cdc_producer,
-        _postgres_connector: postgres_connector,
+        postgres_connector,
         src_client,
         _src_conn,
         sink_client,
