@@ -193,7 +193,7 @@ async fn check_metrics() {
     // TODO: check :9000/metric cdc_events_produced_total > 0
 }*/
 
-/*#[test]
+#[test]
 #[serial]
 async fn check_ordering() {
     let infra = init_infra(InfraOptions {
@@ -211,4 +211,52 @@ async fn check_ordering() {
         COMMIT;"#,
         )
         .await;
-}*/
+
+    std::thread::sleep(Duration::from_secs(3));
+
+    // In which lines those are found
+    struct Lines {
+        a: Option<usize>,
+        b: Option<usize>,
+        c: Option<usize>,
+    }
+
+    let lines = infra
+        .postgres_connector
+        .stdout_lines()
+        .iter()
+        .enumerate()
+        .fold(
+            Lines {
+                a: None,
+                b: None,
+                c: None,
+            },
+            |mut lines, (i, line)| {
+                if line.contains("a@x.com") {
+                    lines.a = Some(i);
+                }
+
+                if line.contains("b@x.com") {
+                    lines.b = Some(i);
+                }
+
+                if line.contains("c@x.com") {
+                    lines.c = Some(i);
+                }
+
+                lines
+            },
+        );
+
+    let a = lines.a.expect("a@x.com not found");
+    let b = lines.b.expect("b@x.com not found");
+    let c = lines.c.expect("c@x.com not found");
+
+    if c > b {
+        panic!("C came after B")
+    }
+    if b > a {
+        panic!("B came after A")
+    }
+}

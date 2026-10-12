@@ -218,7 +218,8 @@ impl PrepareCommand for PostgresConnector {
             .env("PG_CONN_POSTGRES_PORT", "5401")
             .env("PG_CONN_KAFKA_BROKERS", "localhost:9092")
             .env("PG_CONN_KAFKA_TOPIC", "example-topic")
-            .env("PG_CONN_KAFKA_GROUP_ID", "default");
+            .env("PG_CONN_KAFKA_GROUP_ID", "default")
+            .env("RUST_LOG", "debug");
 
         cmd
     }
