@@ -7,7 +7,7 @@ use tokio::test;
 #[test]
 #[serial]
 async fn simple_insert() {
-    let infra = init_infra(InfraOptions::default()).await;
+    let infra = init_infra().await;
 
     infra
         .exec_on_source("INSERT INTO users (name, email) VALUES ('e2e', 'e2e@test.com')")
@@ -25,7 +25,7 @@ async fn simple_insert() {
 #[test]
 #[serial]
 async fn multiple_inserts() {
-    let infra = init_infra(InfraOptions::default()).await;
+    let infra = init_infra().await;
 
     infra
         .exec_on_source(
@@ -49,7 +49,7 @@ async fn multiple_inserts() {
 #[test]
 #[serial]
 async fn insert_update() {
-    let infra = init_infra(InfraOptions::default()).await;
+    let infra = init_infra().await;
 
     infra
         .exec_on_source(r#"INSERT INTO users (name, email) VALUES ('a', 'a@x.com');"#)
@@ -75,7 +75,7 @@ async fn insert_update() {
 #[test]
 #[serial]
 async fn insert_delete() {
-    let infra = init_infra(InfraOptions::default()).await;
+    let infra = init_infra().await;
 
     infra
         .exec_on_source(r#"INSERT INTO users (name, email) VALUES ('a', 'a@x.com');"#)
@@ -99,7 +99,7 @@ async fn insert_delete() {
 #[test]
 #[serial]
 async fn rollback_not_applied() {
-    let infra = init_infra(InfraOptions::default()).await;
+    let infra = init_infra().await;
 
     infra
         .exec_on_source(
@@ -119,7 +119,7 @@ async fn rollback_not_applied() {
 #[test]
 #[serial]
 async fn rel_msg_pub() {
-    let infra = init_infra(InfraOptions::default()).await;
+    let infra = init_infra().await;
 
     std::thread::sleep(Duration::from_secs(10));
 
@@ -137,7 +137,7 @@ async fn rel_msg_pub() {
 #[test]
 #[serial]
 async fn lsn_checkpoint_persists() {
-    let infra = init_infra(InfraOptions::default()).await;
+    let infra = init_infra().await;
 
     // First make an event
     infra
@@ -154,7 +154,7 @@ async fn lsn_checkpoint_persists() {
 #[test]
 #[serial]
 async fn producer_restart_resumes_lsn() {
-    let mut infra = init_infra(InfraOptions::default()).await;
+    let mut infra = init_infra().await;
 
     // First insert
     infra
@@ -184,7 +184,7 @@ async fn producer_restart_resumes_lsn() {
 #[test]
 #[serial]
 async fn sink_restart_resumes_offset() {
-    let mut infra = init_infra(InfraOptions::default()).await;
+    let mut infra = init_infra().await;
 
     infra
         .exec_on_source(r#"INSERT INTO users (name, email) VALUES ('a', 'a@x.com');"#)
@@ -225,7 +225,7 @@ async fn sink_restart_resumes_offset() {
 #[test]
 #[serial]
 async fn check_metrics() {
-    let infra = init_infra(InfraOptions::default()).await;
+    let infra = init_infra().await;
 
     // First insert
     infra
@@ -252,10 +252,7 @@ async fn check_metrics() {
 #[test]
 #[serial]
 async fn check_ordering() {
-    let infra = init_infra(InfraOptions {
-        pg_connector_json: true,
-    })
-    .await;
+    let infra = init_infra().await;
 
     infra
         .exec_on_source(

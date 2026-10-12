@@ -329,7 +329,7 @@ pub async fn get_metrics_for(port: u16) -> Result<String, reqwest::Error> {
         .await
 }
 
-pub async fn init_infra(options: InfraOptions) -> Infra {
+pub async fn init_infra() -> Infra {
     //let kafka = testcontainers_modules::kafka::Kafka::default().start();
     let redpanda =
         testcontainers::GenericImage::new("docker.redpanda.com/redpandadata/redpanda", "v24.2.9")

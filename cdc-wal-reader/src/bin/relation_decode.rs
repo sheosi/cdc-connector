@@ -1,6 +1,5 @@
 use std::time::Instant;
 
-use bumpalo::Bump;
 use bytes::Bytes;
 use cdc_wal_reader::decoder::relation::RelationData;
 use tracing::debug;

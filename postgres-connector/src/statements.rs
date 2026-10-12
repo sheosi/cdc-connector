@@ -1,4 +1,5 @@
 use bumpalo::Bump;
+use bumpalo::collections::String as ArenaString;
 use cdc_sink::SinkError;
 use std::collections::HashMap;
 use std::fmt::Write;
@@ -38,6 +39,7 @@ impl DeleteStatementCache {
                             .get(relation)
                             .ok_or_else(|| SinkError::UnknownRelation(relation))?,
                         keys.as_slice(),
+                        arena,
                     )
                     .await
                     .map_err(|e| SinkError::Platform(e.to_string()))?,
@@ -76,6 +78,7 @@ impl UpsertStatementCache {
                             .ok_or_else(|| SinkError::UnknownRelation(rel))?,
                         &relation_cache.fields[&rel],
                         &relation_cache.keys[&rel],
+                        arena,
                     )
                     .await
                     .map_err(|e| SinkError::Platform(e.to_string()))?,
@@ -96,14 +99,22 @@ impl UpsertStatement {
         table: &str,
         rows: &[String],
         keys: &[String],
+        arena: &Bump,
     ) -> Result<Self, tokio_postgres::Error> {
-        let stmt = client.prepare(&Self::gen_str(table, rows, keys)).await?;
+        let stmt = client
+            .prepare(&Self::gen_str(table, rows, keys, arena))
+            .await?;
 
         Ok(UpsertStatement { stmt })
     }
 
-    fn gen_str(table: &str, rows: &[String], keys: &[String]) -> String {
-        let mut stmt_str = String::with_capacity(40 + table.len() + rows.len() * 25);
+    fn gen_str<'a>(
+        table: &str,
+        rows: &[String],
+        keys: &[String],
+        arena: &'a Bump,
+    ) -> ArenaString<'a> {
+        let mut stmt_str = ArenaString::with_capacity_in(40 + table.len() + rows.len() * 25, arena);
         stmt_str.push_str("INSERT INTO ");
         stmt_str.push_str(table);
         stmt_str.push_str(" (");
@@ -170,16 +181,21 @@ impl DeleteStatement {
         client: &tokio_postgres::Client,
         table: &str,
         keys: &[String],
+        arena: &Bump,
     ) -> Result<Self, tokio_postgres::Error> {
         let stmt = client
-            .prepare(&DeleteStatement::gen_str(table, keys))
+            .prepare(&DeleteStatement::gen_str(table, keys, arena))
             .await?;
 
         Ok(DeleteStatement { stmt })
     }
 
-    fn gen_str(table: &str, keys: &[String]) -> String {
-        let mut stmt_str = "DELETE FROM ".to_string();
+    fn gen_str<'a>(table: &str, keys: &[String], arena: &'a Bump) -> ArenaString<'a> {
+        let mut stmt_str = bumpalo::collections::String::with_capacity_in(
+            19 + table.len() + keys.len() * 20,
+            arena,
+        );
+        stmt_str.push_str("DELETE FROM ");
         stmt_str.push_str(table);
         stmt_str.push_str(" WHERE ");
 
@@ -206,6 +222,7 @@ mod test {
             "users",
             &["id".to_string(), "name".to_string(), "email".to_string()],
             &["id".to_string()],
+            arena,
         );
         let res_str = "INSERT INTO users (id,name,email) VALUES ($1,$2,$3) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name,email = EXCLUDED.email";
 
@@ -215,7 +232,7 @@ mod test {
     #[test]
     fn upsert_no_values() {
         let upsert_str =
-            UpsertStatement::gen_str("users", &["id".to_string()], &["id".to_string()]);
+            UpsertStatement::gen_str("users", &["id".to_string()], &["id".to_string()], arena);
         let res_str = "INSERT INTO users (id) VALUES ($1) ON CONFLICT (id) DO NOTHING";
 
         assert_eq!(upsert_str, res_str);
@@ -223,7 +240,7 @@ mod test {
 
     #[test]
     fn simple_delete_str() {
-        let delete_str = DeleteStatement::gen_str("users", &["id".to_string()]);
+        let delete_str = DeleteStatement::gen_str("users", &["id".to_string()], arena);
         let res_str = "DELETE FROM users WHERE id = $1";
 
         assert_eq!(delete_str, res_str);
@@ -231,7 +248,8 @@ mod test {
 
     #[test]
     fn multiple_delete_str() {
-        let delete_str = DeleteStatement::gen_str("users", &["id".to_string(), "name".to_string()]);
+        let delete_str =
+            DeleteStatement::gen_str("users", &["id".to_string(), "name".to_string()], arena);
         let res_str = "DELETE FROM users WHERE id = $1 AND name = $2";
 
         assert_eq!(delete_str, res_str);

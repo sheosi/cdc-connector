@@ -49,3 +49,7 @@ harness = false
 [[bench]]
 name = "relation"
 harness = false
+
+[[bench]]
+name = "statement_creation"
+harness = false
