@@ -1,0 +1,50 @@
+name: CI
+
+on:
+    push:
+      branches: [main]
+    pull_request:
+
+jobs:
+    check:
+      runs-on: ubuntu-latest
+      steps:
+        - uses: actions/checkout@v4
+
+        - name: Install Rust
+          uses: dtolnay/rust-toolchain@1.93.1
+          with:
+              components: rustfmt, clippy
+
+        - name: Cache cargo
+          uses: Swatinem/rust-cache@v2
+
+        - name: Check formatting
+          run: cargo fmt -- --check
+
+        - name: Clippy
+          run: cargo clippy --workspace -- -D warnings
+
+        - name: Check
+          run: cargo check --workspace
+
+    test:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Install Rust
+              uses: dtolnay/rust-toolchain@1.93.1
+
+            - name: Cache cargo
+              uses: Swatinem/rust-cache@v2
+
+            # We are using docker images for testing, better keep them cached
+            - name: Cache Docker images
+              uses: ScribeMD/docker-cache@0.5.0
+              with:
+                key: docker-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+
+            - name: Run tests
+              run: cargo test --workspace
+              timeout-minutes: 30
