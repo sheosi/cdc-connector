@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use cdc_integration_tests::{InfraOptions, TWO_SECONDS, get_metrics_for, init_infra, read_lsn};
+use cdc_integration_tests::{TWO_SECONDS, get_metrics_for, init_infra, read_lsn};
 use serial_test::serial;
 use tokio::test;
 
@@ -123,15 +123,23 @@ async fn rel_msg_pub() {
 
     std::thread::sleep(Duration::from_secs(10));
 
-    if infra
-        .postgres_connector
-        .stdout_lines()
-        .iter()
-        .find(|l| l.contains("Got relation"))
-        .is_none()
-    {
-        panic!("Relation not found");
-    }
+    let found = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            if infra
+                .postgres_connector
+                .stdout_lines()
+                .iter()
+                .any(|l| l.contains("Got relation"))
+            {
+                return true;
+            }
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+    })
+    .await
+    .unwrap_or(false);
+
+    assert!(found, "Relation not found");
 }
 
 #[test]
@@ -229,6 +237,15 @@ async fn sink_restart_resumes_offset() {
 #[test]
 #[serial]
 async fn check_metrics() {
+    fn get_counter_value(metrics: &str, name: &str) -> f64 {
+        metrics
+            .lines()
+            .find(|l| l.split('{').next() == Some(name))
+            .and_then(|l| l.rsplit_once(' '))
+            .and_then(|(_, v)| v.parse().ok())
+            .unwrap_or(0.0)
+    }
+
     let infra = init_infra().await;
 
     // First insert
@@ -244,13 +261,13 @@ async fn check_metrics() {
         .await
         .expect("Failed to get cdc-prod metrics");
 
-    assert!(!cdc_prod_metrics.is_empty());
+    assert!(get_counter_value(&cdc_prod_metrics, "cdc_events_produced_total") > 0.0);
 
     let pg_conn_metrics = get_metrics_for(9002)
         .await
         .expect("Failed to pg-conn metrics");
 
-    assert!(!pg_conn_metrics.is_empty());
+    assert!(get_counter_value(&pg_conn_metrics, "cdc_events_consumed_total") > 0.0);
 }
 
 #[test]

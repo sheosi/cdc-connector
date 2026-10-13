@@ -417,7 +417,7 @@ pub async fn init_infra() -> Infra {
     let cdc_producer = TestBinary::spawn(CdcProducer {});
 
     // Wait for producer to be running
-    std::thread::sleep(Duration::from_secs(1));
+    std::thread::sleep(Duration::from_secs(3));
 
     let postgres_connector = TestBinary::spawn(PostgresConnector {});
 
