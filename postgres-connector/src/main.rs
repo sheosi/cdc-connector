@@ -20,6 +20,9 @@ use tracing::debug;
 
 use crate::statements::{DeleteStatementCache, UpsertStatementCache};
 
+const PG_EPOCH: LazyLock<DateTime<Utc>> =
+    LazyLock::new(|| DateTime::UNIX_EPOCH + Duration::seconds(946_684_800));
+
 mod statements;
 
 #[tokio::main]
@@ -218,9 +221,6 @@ impl<'a> ToSql for ToSqlWrapper<'a> {
     where
         Self: Sized,
     {
-        const PG_EPOCH: LazyLock<DateTime<Utc>> =
-            LazyLock::new(|| DateTime::UNIX_EPOCH + Duration::seconds(946_684_800));
-
         match &self.0 {
             PgValue::Text(s) => s.to_sql(ty, out),
             PgValue::Int4(n) => n.to_sql(ty, out),
