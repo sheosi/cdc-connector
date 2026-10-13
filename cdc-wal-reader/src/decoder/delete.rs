@@ -120,7 +120,7 @@ mod test {
 
         let arena = Bump::with_capacity(512);
 
-        let relation_map = common::get_example_rel_map_keys(&arena);
+        let relation_map = common::get_example_rel_map_keys();
 
         let event = parse(&data, &relation_map, &arena);
 

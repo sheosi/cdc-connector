@@ -112,9 +112,7 @@ pub fn get_example_rel_data() -> RelationData {
 }
 
 #[cfg(test)]
-pub fn get_example_rel_map_keys(
-    arena: &Bump,
-) -> std::collections::HashMap<u32, RelationData, RandomState> {
+pub fn get_example_rel_map_keys() -> std::collections::HashMap<u32, RelationData, RandomState> {
     let mut relation_map = std::collections::HashMap::default();
     relation_map.insert(1u32, get_example_rel_data_keys());
 

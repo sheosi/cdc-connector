@@ -214,15 +214,19 @@ impl DeleteStatement {
 #[cfg(test)]
 mod test {
 
+    use bumpalo::Bump;
+
     use crate::statements::{DeleteStatement, UpsertStatement};
 
     #[test]
     fn simple_upsert_str() {
+        let arena = Bump::new();
+
         let upsert_str = UpsertStatement::gen_str(
             "users",
             &["id".to_string(), "name".to_string(), "email".to_string()],
             &["id".to_string()],
-            arena,
+            &arena,
         );
         let res_str = "INSERT INTO users (id,name,email) VALUES ($1,$2,$3) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name,email = EXCLUDED.email";
 
@@ -231,8 +235,10 @@ mod test {
 
     #[test]
     fn upsert_no_values() {
+        let arena = Bump::new();
+
         let upsert_str =
-            UpsertStatement::gen_str("users", &["id".to_string()], &["id".to_string()], arena);
+            UpsertStatement::gen_str("users", &["id".to_string()], &["id".to_string()], &arena);
         let res_str = "INSERT INTO users (id) VALUES ($1) ON CONFLICT (id) DO NOTHING";
 
         assert_eq!(upsert_str, res_str);
@@ -240,7 +246,9 @@ mod test {
 
     #[test]
     fn simple_delete_str() {
-        let delete_str = DeleteStatement::gen_str("users", &["id".to_string()], arena);
+        let arena = Bump::new();
+
+        let delete_str = DeleteStatement::gen_str("users", &["id".to_string()], &arena);
         let res_str = "DELETE FROM users WHERE id = $1";
 
         assert_eq!(delete_str, res_str);
@@ -248,8 +256,10 @@ mod test {
 
     #[test]
     fn multiple_delete_str() {
+        let arena = Bump::new();
+
         let delete_str =
-            DeleteStatement::gen_str("users", &["id".to_string(), "name".to_string()], arena);
+            DeleteStatement::gen_str("users", &["id".to_string(), "name".to_string()], &arena);
         let res_str = "DELETE FROM users WHERE id = $1 AND name = $2";
 
         assert_eq!(delete_str, res_str);

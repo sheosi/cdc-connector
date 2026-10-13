@@ -80,10 +80,12 @@ pub mod owned {
         pub fn merge_toasted(&mut self) -> Result<(), ()> {
             if let Op::Update { old, row } = self {
                 for (i, v) in row.iter_mut().enumerate() {
-                    if i < old.len() {
-                        *v = old[i].clone();
-                    } else {
-                        return Err(());
+                    if matches!(v, PgValue::Toasted) {
+                        if i < old.len() {
+                            *v = old[i].clone();
+                        } else {
+                            return Err(());
+                        }
                     }
                 }
             }
