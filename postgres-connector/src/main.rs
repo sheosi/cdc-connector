@@ -105,10 +105,15 @@ impl PostgresSink {
 impl KafkaSink for PostgresSink {
     async fn on_event<'a>(
         &mut self,
-        event: ChangeEvent<'a>,
+        mut event: ChangeEvent<'a>,
         arena: &Bump,
     ) -> Result<(), SinkError> {
         debug!("Got event: {:?}", &event);
+
+        if let Err(()) = event.op.merge_toasted() {
+            return Err(SinkError::ToastedInKeyOnly);
+        }
+
         match event.op {
             Op::Insert { row } => {
                 let insert_stmt = self
@@ -213,6 +218,7 @@ impl<'a> ToSql for ToSqlWrapper<'a> {
             PgValue::Text(s) => s.to_sql(ty, out),
             PgValue::Int4(n) => n.to_sql(ty, out),
             PgValue::Null => Ok(IsNull::Yes),
+            PgValue::Toasted => Err("Toasted value was not substituted".into()),
         }
     }
 
@@ -232,6 +238,7 @@ impl<'a> ToSql for ToSqlWrapper<'a> {
             PgValue::Text(s) => s.to_sql_checked(ty, out),
             PgValue::Int4(n) => n.to_sql_checked(ty, out),
             PgValue::Null => Ok(IsNull::Yes),
+            PgValue::Toasted => Err("Toasted value was not substituted".into()),
         }
     }
 }

@@ -46,6 +46,7 @@ pub mod arena {
     }
 }
 
+/// Makes use of globally allocated vectors. We can provide deserialization here.
 pub mod owned {
     use serde::{Deserialize, Serialize};
 
@@ -67,12 +68,27 @@ pub mod owned {
     }
 
     impl<'a> Op<'a> {
+        /// Str for log and metrics purposes
         pub fn op_str(&self) -> &'static str {
             match self {
                 Op::Insert { row: _ } => "insert",
                 Op::Update { old: _, row: _ } => "update",
                 Op::Delete { old: _ } => "delete",
             }
+        }
+
+        pub fn merge_toasted(&mut self) -> Result<(), ()> {
+            if let Op::Update { old, row } = self {
+                for (i, v) in row.iter_mut().enumerate() {
+                    if i < old.len() {
+                        *v = old[i].clone();
+                    } else {
+                        return Err(());
+                    }
+                }
+            }
+
+            Ok(())
         }
     }
 
@@ -100,7 +116,7 @@ pub mod owned {
     }
 }
 
-const CHANGE_EVENT_SCHEMA_STR: &str = r#"{"type":"record","name":"ChangeEvent","fields":[{"name":"op","type":[{"type":"record","name":"Insert","fields":[{"name":"row","type":{"type":"array","items":[{"type":"record","name":"Text","fields":[{"name":"Text","type":"string"}]},{"type":"record","name":"Int4","fields":[{"name":"Int4","type":"long"}]},{"type":"record","name":"Null","fields":[{"name":"Null","type":"null"}]}]}}]},{"type":"record","name":"Update","fields":[{"name":"old","type":{"type":"array","items":["Text","Int4","Null"]}},{"name":"row","type":{"type":"array","items":["Text","Int4","Null"]}}]},{"type":"record","name":"Delete","fields":[{"name":"old","type":{"type":"array","items":["Text","Int4","Null"]}}]}]},{"name":"rel","type":"long"}]}"#;
+const CHANGE_EVENT_SCHEMA_STR: &str = r#"{"type":"record","name":"ChangeEvent","fields":[{"name":"op","type":[{"type":"record","name":"Insert","fields":[{"name":"row","type":{"type":"array","items":[{"type":"record","name":"Text","fields":[{"name":"Text","type":"string"}]},{"type":"record","name":"Int4","fields":[{"name":"Int4","type":"long"}]},{"type":"record","name":"Toasted","fields":[{"name":"Toasted","type":"null"}]},{"type":"record","name":"Null","fields":[{"name":"Null","type":"null"}]}]}}]},{"type":"record","name":"Update","fields":[{"name":"old","type":{"type":"array","items":["Text","Int4","Null","Toasted"]}},{"name":"row","type":{"type":"array","items":["Text","Int4","Null","Toasted"]}}]},{"type":"record","name":"Delete","fields":[{"name":"old","type":{"type":"array","items":["Text","Int4","Null"]}}]}]},{"name":"rel","type":"long"}]}"#;
 
 const RELATION_SCHEMA_STR: &str = r#"{"type":"record","name":"Relation","fields":[{"name":"relation_oid","type":"long"},{"name":"namespace","type":"string"},{"name":"name","type":"string"},{"name":"fields","type":{"type":"array","items":{"type":"record","name":"Field","fields":[{"name":"is_key","type":"boolean"},{"name":"name","type":"string"},{"name":"kind","type":"int"}]}}},{"name":"replica_id","type":"int"}]}"#;
 
@@ -236,6 +252,7 @@ pub enum PgValue<'a> {
     Null,
     Text(&'a str),
     Int4(i32),
+    Toasted,
 }
 
 impl<'a> Serialize for PgValue<'a> {
@@ -256,6 +273,11 @@ impl<'a> Serialize for PgValue<'a> {
                 record.serialize_field("Int4", n)?;
                 record.end()
             }
+            PgValue::Toasted => {
+                let mut record = serializer.serialize_struct("Toasted", 1)?;
+                record.serialize_field("Toasted", &())?;
+                record.end()
+            }
         }
     }
 }
@@ -268,7 +290,7 @@ impl<'de: 'a, 'a> Deserialize<'de> for PgValue<'a> {
             type Value = PgValue<'a>;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("a Text or Int4 record")
+                formatter.write_str("a Text, Int4, Toasted or Null record")
             }
 
             fn visit_map<M: MapAccess<'de>>(self, mut map: M) -> Result<Self::Value, M::Error> {
@@ -288,6 +310,10 @@ impl<'de: 'a, 'a> Deserialize<'de> for PgValue<'a> {
                     "Null" => {
                         let _ = map.next_value::<()>()?;
                         Ok(PgValue::Null)
+                    }
+                    "Toasted" => {
+                        let _ = map.next_value::<()>()?;
+                        Ok(PgValue::Toasted)
                     }
                     other => Err(serde::de::Error::custom(format!(
                         "unknown PgValue variant: {}",
@@ -432,6 +458,19 @@ mod tests {
         }
 
         #[test]
+        fn roundtrip_event_update_toasted() {
+            let event = ChangeEvent {
+                op: Op::Update {
+                    old: vec![PgValue::Int4(1), PgValue::Text("old@x.com")],
+                    row: vec![PgValue::Int4(1), PgValue::Text("Alice"), PgValue::Toasted],
+                },
+                rel: 1024,
+            };
+
+            roundtrip(event);
+        }
+
+        #[test]
         fn roundtrip_event_delete() {
             let event = ChangeEvent {
                 op: Op::Delete {
@@ -505,6 +544,23 @@ mod tests {
             };
 
             roundtrip_rel_bugged(relation);
+        }
+
+        #[test]
+        fn merge_toasted() {
+            let mut op = Op::Update {
+                old: vec![PgValue::Int4(0), PgValue::Text("hello")],
+                row: vec![PgValue::Int4(0), PgValue::Toasted],
+            };
+
+            let op_merged = Op::Update {
+                old: vec![PgValue::Int4(0), PgValue::Text("hello")],
+                row: vec![PgValue::Int4(0), PgValue::Text("hello")],
+            };
+
+            op.merge_toasted().unwrap();
+
+            assert_eq!(op, op_merged);
         }
     }
 }

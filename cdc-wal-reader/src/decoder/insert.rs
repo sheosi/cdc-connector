@@ -23,7 +23,7 @@ pub fn parse<'a>(
         .get(&relation_oid)
         .ok_or_else(|| DecoderError::UnknownRelation(relation_oid))?;
 
-    let row = get_new_tuple_data(&data[5..], &relation.inner.fields, arena)?;
+    let row = get_new_tuple_data(&data[5..], &relation.inner.fields, arena, false)?;
 
     let event = ChangeEvent {
         op: Op::Insert { row },

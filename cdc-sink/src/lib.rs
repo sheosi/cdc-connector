@@ -108,6 +108,9 @@ pub enum SinkError {
 
     #[error("Received an error from the platform: {0}")]
     Platform(String),
+
+    #[error("Received toasted in key-only update")]
+    ToastedInKeyOnly,
 }
 
 impl KafkaClient {

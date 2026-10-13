@@ -2,22 +2,26 @@ use crate::decoder::{DecoderError, relation::KeyField};
 use bumpalo::{Bump, collections::Vec};
 use cdc_avro::{Field, FieldAccess, FieldKind, PgValue};
 
+/// Parse a full value row either in an O tuple or a N tuple. Is_update must be set
+/// to true for UPDATE, this is because toasted fields are only valid there.
 pub fn parse<'a>(
     data: &'a [u8],
     arena: &'a Bump,
     fields: &'a [Field],
+    is_update: bool,
 ) -> Result<(Vec<'a, PgValue<'a>>, usize), DecoderError> {
     #[inline(always)]
     fn num_cols<'a, const N: usize>(
         data: &'a [u8],
         fields: &'a [Field],
         arena: &'a Bump,
+        is_update: bool,
     ) -> Result<(Vec<'a, PgValue<'a>>, usize), DecoderError> {
         let mut last_pos = 2;
         let mut cols = Vec::with_capacity_in(N, arena);
 
         for i in 0..N {
-            let (value, len) = parse_value(&data[last_pos..], &fields[i])?;
+            let (value, len) = parse_value(&data[last_pos..], &fields[i], is_update)?;
 
             last_pos += len;
 
@@ -39,18 +43,18 @@ pub fn parse<'a>(
     }
 
     match n_cols {
-        1 => num_cols::<1>(data, fields, arena),
-        2 => num_cols::<2>(data, fields, arena),
-        3 => num_cols::<3>(data, fields, arena),
-        4 => num_cols::<4>(data, fields, arena),
-        5 => num_cols::<5>(data, fields, arena),
-        6 => num_cols::<6>(data, fields, arena),
+        1 => num_cols::<1>(data, fields, arena, is_update),
+        2 => num_cols::<2>(data, fields, arena, is_update),
+        3 => num_cols::<3>(data, fields, arena, is_update),
+        4 => num_cols::<4>(data, fields, arena, is_update),
+        5 => num_cols::<5>(data, fields, arena, is_update),
+        6 => num_cols::<6>(data, fields, arena, is_update),
         _ => {
             let mut last_pos = 2;
             let mut cols = Vec::with_capacity_in(n_cols as usize, arena);
 
             for i in 0..n_cols {
-                let (value, len) = parse_value(&data[last_pos..], &fields[i as usize])?;
+                let (value, len) = parse_value(&data[last_pos..], &fields[i as usize], is_update)?;
 
                 last_pos += len;
 
@@ -84,7 +88,7 @@ pub fn parse_keys<'a>(
         let mut key_idx = 0;
         for i in 0..N {
             if i == indexes[key_idx] {
-                let (value, len) = parse_value(&data[last_pos..], &fields[key_idx])?;
+                let (value, len) = parse_value(&data[last_pos..], &fields[key_idx], false)?;
 
                 last_pos += len;
 
@@ -126,7 +130,7 @@ pub fn parse_keys<'a>(
             let mut cols = Vec::with_capacity_in(n_cols as usize, arena);
 
             for i in 0..n_cols {
-                let (value, len) = parse_value(&data[last_pos..], &fields[i as usize])?;
+                let (value, len) = parse_value(&data[last_pos..], &fields[i as usize], false)?;
 
                 last_pos += len;
 
@@ -141,6 +145,7 @@ pub fn parse_keys<'a>(
 fn parse_value<'a, F: FieldAccess>(
     data: &'a [u8],
     field: &F,
+    is_update: bool,
 ) -> Result<(PgValue<'a>, usize), DecoderError> {
     if data.len() == 0 {
         return Err(DecoderError::TruncatedInput);
@@ -148,7 +153,13 @@ fn parse_value<'a, F: FieldAccess>(
 
     match data[0] {
         b'n' => Ok((PgValue::Null, 1)),
-        b'u' => todo!(), //Ok((TupleCol::Toasted, 1)),
+        b'u' => {
+            if is_update {
+                Ok((PgValue::Toasted, 1))
+            } else {
+                Err(DecoderError::ToastedValueOnNonUpdate)
+            }
+        }
         b't' => {
             if data.len() < 5 {
                 return Err(DecoderError::TruncatedInput);
@@ -222,7 +233,7 @@ mod test {
 
         let relation = get_example_rel();
 
-        let tuple_data = parse(&data, &arena, &relation.fields);
+        let tuple_data = parse(&data, &arena, &relation.fields, false);
         let tuple_data_manual = vec![in &arena;];
 
         assert_eq!(tuple_data, Ok((tuple_data_manual, 2)));
@@ -236,7 +247,7 @@ mod test {
 
         let relation = get_example_rel();
 
-        let tuple_data = parse(&data, &arena, &relation.fields);
+        let tuple_data = parse(&data, &arena, &relation.fields, false);
         let tuple_data_manual = vec![in &arena; col_byte_id()];
 
         assert_eq!(tuple_data, Ok((tuple_data_manual, 11)));
@@ -256,8 +267,25 @@ mod test {
 
         let relation = &get_example_rel();
 
-        let tuple_data = parse(&data, &arena, &relation.fields);
+        let tuple_data = parse(&data, &arena, &relation.fields, false);
         let tuple_data_manual = vec![in &arena; col_byte_id(), col_text_name()];
+
+        assert_eq!(tuple_data, Ok((tuple_data_manual, 21)));
+    }
+
+    #[test]
+    fn toasted_data() {
+        let data = [
+            0, 1, // Two columns
+            b'u',
+        ];
+
+        let arena = Bump::new();
+
+        let relation = &get_example_rel();
+
+        let tuple_data = parse(&data, &arena, &relation.fields, false);
+        let tuple_data_manual = vec![in &arena; PgValue::Toasted];
 
         assert_eq!(tuple_data, Ok((tuple_data_manual, 21)));
     }
@@ -270,7 +298,7 @@ mod test {
 
         let relation = &get_example_rel();
 
-        let tuple_data = parse(&data, &arena, &relation.fields);
+        let tuple_data = parse(&data, &arena, &relation.fields, false);
 
         assert_eq!(tuple_data, Err(DecoderError::TruncatedInput))
     }
@@ -283,7 +311,7 @@ mod test {
 
         let relation = &get_example_rel();
 
-        let tuple_data = parse(&data, &arena, &relation.fields);
+        let tuple_data = parse(&data, &arena, &relation.fields, false);
 
         assert_eq!(tuple_data, Err(DecoderError::TruncatedInput))
     }
@@ -296,7 +324,7 @@ mod test {
 
         let relation = &get_example_rel();
 
-        let tuple_data = parse(&data, &arena, &relation.fields);
+        let tuple_data = parse(&data, &arena, &relation.fields, false);
 
         assert_eq!(tuple_data, Err(DecoderError::WrongColTypeKey(b'c')));
     }
@@ -309,7 +337,7 @@ mod test {
 
         let relation = &get_example_rel();
 
-        let tuple_data = parse(&data, &arena, &relation.fields);
+        let tuple_data = parse(&data, &arena, &relation.fields, false);
 
         assert_eq!(tuple_data, Err(DecoderError::TruncatedInput));
     }
@@ -322,7 +350,7 @@ mod test {
 
         let relation = &get_example_rel();
 
-        let tuple_data = parse(&data, &arena, &relation.fields);
+        let tuple_data = parse(&data, &arena, &relation.fields, false);
 
         assert_eq!(tuple_data, Err(DecoderError::TruncatedInput));
     }
@@ -335,7 +363,7 @@ mod test {
 
         let relation = &get_example_rel();
 
-        let tuple_data = parse(&data, &arena, &relation.fields);
+        let tuple_data = parse(&data, &arena, &relation.fields, false);
 
         assert_eq!(tuple_data, Err(DecoderError::TruncatedInput));
     }
@@ -350,7 +378,7 @@ mod test {
 
         let relation = &get_example_rel();
 
-        let tuple_data = parse(&data, &arena, &relation.fields);
+        let tuple_data = parse(&data, &arena, &relation.fields, false);
 
         assert_eq!(tuple_data, Err(DecoderError::TruncatedInput));
     }
@@ -363,7 +391,7 @@ mod test {
 
         let relation = &get_example_rel();
 
-        let tuple_data = parse(&data, &arena, &relation.fields);
+        let tuple_data = parse(&data, &arena, &relation.fields, false);
 
         assert_eq!(tuple_data, Err(DecoderError::WrongFieldKind(Int4)))
     }
@@ -376,9 +404,21 @@ mod test {
 
         let relation = get_example_rel_keys();
 
-        let tuple_data = parse(&data, &arena, &relation.fields);
-        let tuple_data_manual = vec![in &arena; col_byte_id()];
+        let tuple_data = parse(&data, &arena, &relation.fields, false);
 
         assert_eq!(tuple_data, Err(CorruptedInput));
+    }
+
+    #[test]
+    fn non_update_toasted_error() {
+        let data = [0, 1, b'u'];
+
+        let arena = Bump::new();
+
+        let relation = get_example_rel_keys();
+
+        let tuple_data = parse(&data, &arena, &relation.fields, false);
+
+        assert_eq!(tuple_data, Err(DecoderError::ToastedValueOnNonUpdate));
     }
 }

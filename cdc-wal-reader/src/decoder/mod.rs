@@ -51,4 +51,7 @@ pub enum DecoderError {
 
     #[error("Got a different kind of old tuple data in a message compared to the relation {0:?}")]
     WrongOldTupleKind(ReplicaKind),
+
+    #[error("Toasted value on non UPDATE operation")]
+    ToastedValueOnNonUpdate,
 }

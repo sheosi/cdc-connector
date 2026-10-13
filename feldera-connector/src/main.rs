@@ -116,9 +116,13 @@ impl FelderaConnector {
 impl KafkaSink for FelderaConnector {
     async fn on_event<'a>(
         &mut self,
-        event: ChangeEvent<'a>,
+        mut event: ChangeEvent<'a>,
         _arena: &Bump,
     ) -> Result<(), SinkError> {
+        if let Err(()) = event.op.merge_toasted() {
+            return Err(SinkError::ToastedInKeyOnly);
+        }
+
         self.insert_batch(
             self.table_names
                 .get(event.rel)

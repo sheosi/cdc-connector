@@ -43,7 +43,7 @@ pub fn get_old_tuple_data<'a>(
                 return Err(DecoderError::WrongOldTupleKind(ReplicaKind::Row));
             }
 
-            let (row, size) = tuple_data::parse(&data[1..], arena, &relation.inner.fields)?;
+            let (row, size) = tuple_data::parse(&data[1..], arena, &relation.inner.fields, false)?;
             Ok((row, size + 1))
         }
         a => Err(WrongOldTupleKey(a)),
@@ -54,6 +54,7 @@ pub fn get_new_tuple_data<'a>(
     data: &'a [u8],
     fields: &'a [Field],
     arena: &'a Bump,
+    is_update: bool,
 ) -> Result<bumpalo::collections::Vec<'a, PgValue<'a>>, DecoderError> {
     if data.len() == 0 {
         return Err(DecoderError::TruncatedInput);
@@ -63,7 +64,7 @@ pub fn get_new_tuple_data<'a>(
         return Err(DecoderError::WrongNewTupleKey(data[0]));
     }
 
-    let (tuple, _) = tuple_data::parse(&data[1..], arena, fields)?;
+    let (tuple, _) = tuple_data::parse(&data[1..], arena, fields, is_update)?;
     Ok(tuple)
 }
 
@@ -245,7 +246,7 @@ mod test {
 
         let example_rel = get_example_rel_data();
 
-        let new_tuple = get_new_tuple_data(&data, &example_rel.inner.fields, &arena);
+        let new_tuple = get_new_tuple_data(&data, &example_rel.inner.fields, &arena, false);
         let new_tuple_manual = vec![
         in &arena;
             col_byte_id(),
@@ -302,7 +303,7 @@ mod test {
 
         let example_rel = get_example_rel_data();
 
-        let new_tuple = get_new_tuple_data(&data, &example_rel.inner.fields, &arena);
+        let new_tuple = get_new_tuple_data(&data, &example_rel.inner.fields, &arena, false);
 
         assert_eq!(new_tuple, Err(DecoderError::TruncatedInput));
     }
@@ -328,7 +329,7 @@ mod test {
 
         let example_rel = get_example_rel_data();
 
-        let new_tuple = get_new_tuple_data(&data, &example_rel.inner.fields, &arena);
+        let new_tuple = get_new_tuple_data(&data, &example_rel.inner.fields, &arena, false);
 
         assert_eq!(new_tuple, Err(DecoderError::WrongNewTupleKey(b'C')));
     }

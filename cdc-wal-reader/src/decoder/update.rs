@@ -41,7 +41,12 @@ pub fn parse<'a>(
         return Err(DecoderError::TruncatedInput);
     }
 
-    let new_data = get_new_tuple_data(&data[old_data_end + 5..], &relation.inner.fields, &arena)?;
+    let new_data = get_new_tuple_data(
+        &data[old_data_end + 5..],
+        &relation.inner.fields,
+        &arena,
+        true,
+    )?;
 
     let event = ChangeEvent {
         op: Op::Update { old, row: new_data },
