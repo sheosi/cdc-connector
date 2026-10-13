@@ -2,8 +2,6 @@
 
 Postgres -> Kafka CDC pipeline with schema sharing, per-transaction batching, and exactly-once semantics.
 
-**NOTE: This is still in heavy development**
-
 ## Features
 
 - Decode Postgres logical replication WAL.
@@ -14,6 +12,7 @@ Postgres -> Kafka CDC pipeline with schema sharing, per-transaction batching, an
 - Postgres and Feldera sinks.
 - Zero-copy SIMD-optimized tuple parsing (~135ns per insert).
 - Exactly once messages (more below).
+- Rust-based integration tests.
 
 ## Architecture
 
@@ -90,7 +89,7 @@ Also, checkout `config/feldera-connector.toml`
 
 * Producer: Kafka transactions + idempotent producer.
 * Consumer: read_committed + idempotent sink writes.
-* LSN checkpoint commited after successful Kafka transaction.
+* LSN checkpoint committed after successful Kafka transaction.
 
 ## MSRV (Minimum Supported Rust Version)
 
@@ -108,16 +107,40 @@ Events are really fast to parse, we make use of every possible trick: Simd, Zero
 
 Relations on the other hand we want them to persist in memory, so we can't make use of zero-copy nor arenas (given that not only they have to persist, with time some of them will be removed, something very complicated in an arena).
 
+## Running tests
+
+Tests make use of the `testcontainer` crate, which create independent containers using Docker, and thus they need a running Docker daemon.
+
+Run on this project root:
+
+```shell
+cargo test --workspace
+```
+
+To see the logs:
+
+```shell
+cargo test --workspace -- --nocapture
+```
 
 ## Known limitations
 
-This is a Poc project, rather than a full one. So it's scope it's reduced:
+This is a PoC project, rather than a full one. So it's scope it's reduced:
 
-* Postgres data types: Right now only int4 and text are supported.
+* Postgres data types: Right now only int4, bigint, bool, text and timestamp are supported.
 * Postgres WAL messages: insert, delete, update, Transaction begin/end are the ones supported. logical decoding, origin, types, truncate, stream start/stop/commit/abort, begin prepare, preare, prepare, rollback prepare and stream prepare messages aren't supported.
 * One db per cdc-producer
 
+### Future work
 
+#### Delta updates
+
+For a high-perfomance system this could be transformed into a system that reduces communication by sending deltas. While an extremely interesting idea to research this would entail tackling several problems:
+
+* *Cached vs uncached queries*: with the number of queries being variable, we'd have to adjust which ones will be kept cached and which ones are just made dinamycally.
+* *Smart cache cleaning*: for same reason as above, a system that checks both when was the last time a query was used and how probable we are to use it again would be needed as well.
+* *Delta generation*: for minimum bandwith the best option would be to have some internal db replica of the data being sent. The great ammount of data would make it impossible to have everything in memory, needing something like Redis (possibly in-process).
+* *Full row recovery*: A sink might have some problem where the whole row is needed, some way to obtain that row should be possible too.
 
 ## License
 
