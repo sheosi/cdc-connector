@@ -10,7 +10,7 @@ use cdc_avro::{Relation, owned::ChangeEvent};
 use chrono::Utc;
 use futures_util::StreamExt;
 use rdkafka::{
-    ClientConfig, Message,
+    ClientConfig, Message, TopicPartitionList,
     config::RDKafkaLogLevel,
     consumer::{Consumer, StreamConsumer},
     error::KafkaError,
@@ -116,12 +116,15 @@ pub enum SinkError {
 impl KafkaClient {
     pub async fn load_relations(&self, arena: &Bump) -> Result<HashMap<u32, Relation>, KafkaError> {
         let rel_topic = bumpalo::format!(in arena, "{}.relations", self.topic);
-        self.consumer.subscribe(&[&rel_topic])?;
+
+        // Assign still gets us partitions
+        self.reset_committed_offsets_and_assign(&rel_topic).await?;
 
         let mut relations = HashMap::new();
         let mut stream = self.consumer.stream();
+        let start = Instant::now();
 
-        loop {
+        while start.elapsed() < Duration::from_secs(5) {
             match tokio::time::timeout(Duration::from_millis(500), stream.next()).await {
                 Ok(Some(Ok(msg))) => {
                     tracing::info!("Got relations");
@@ -147,6 +150,28 @@ impl KafkaClient {
         }
 
         Ok(relations)
+    }
+
+    async fn reset_committed_offsets_and_assign(&self, topic: &str) -> Result<(), KafkaError> {
+        // Build a partition list to seek from the beginning, ignoring committed offsetss
+        let mut tpl = TopicPartitionList::new();
+        let metadata = self
+            .consumer
+            .fetch_metadata(Some(topic), Duration::from_secs(5))?;
+
+        let topic_meta = metadata
+            .topics()
+            .first()
+            .ok_or_else(|| KafkaError::Subscription(format!("topic {} not found", topic)))?;
+
+        for partition in topic_meta.partitions() {
+            tpl.add_partition_offset(topic, partition.id(), rdkafka::Offset::Beginning)
+                .map_err(|e| KafkaError::Subscription(e.to_string()))?;
+        }
+
+        self.consumer.assign(&tpl)?;
+
+        Ok(())
     }
 
     pub async fn consume_from_kafka<S: KafkaSink>(&self, mut sink: S) {

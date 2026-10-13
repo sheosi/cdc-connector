@@ -206,7 +206,11 @@ async fn sink_restart_resumes_offset() {
 
     // Wait for B
     infra
-        .wait_for_sink_row("users", "name = 'b' AND email = 'b@x.com'", TWO_SECONDS)
+        .wait_for_sink_row(
+            "users",
+            "name = 'b' AND email = 'b@x.com'",
+            Duration::from_secs(10),
+        )
         .await;
 
     let new_lines = infra.postgres_connector.stdout_lines().join("\n");
