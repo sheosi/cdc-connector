@@ -4,9 +4,13 @@ use cdc_avro::{
     owned::{ChangeEvent, Op},
 };
 use cdc_sink::{KafkaConfig, KafkaSink, MetricsConfig, SinkError, TableNames};
+use chrono::{DateTime, Duration, Utc};
 use config::Config;
 use serde::Deserialize;
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::LazyLock,
+};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_postgres::{
     Connection, NoTls,
@@ -214,9 +218,18 @@ impl<'a> ToSql for ToSqlWrapper<'a> {
     where
         Self: Sized,
     {
+        const PG_EPOCH: LazyLock<DateTime<Utc>> =
+            LazyLock::new(|| DateTime::UNIX_EPOCH + Duration::seconds(946_684_800));
+
         match &self.0 {
             PgValue::Text(s) => s.to_sql(ty, out),
             PgValue::Int4(n) => n.to_sql(ty, out),
+            PgValue::Int8(n) => n.to_sql(ty, out),
+            PgValue::Bool(b) => b.to_sql(ty, out),
+            PgValue::Timestamp(ts) => {
+                let dt = (*PG_EPOCH + Duration::microseconds(*ts)).naive_utc();
+                dt.to_sql(ty, out)
+            }
             PgValue::Null => Ok(IsNull::Yes),
             PgValue::Toasted => Err("Toasted value was not substituted".into()),
         }
@@ -237,6 +250,12 @@ impl<'a> ToSql for ToSqlWrapper<'a> {
         match &self.0 {
             PgValue::Text(s) => s.to_sql_checked(ty, out),
             PgValue::Int4(n) => n.to_sql_checked(ty, out),
+            PgValue::Int8(n) => n.to_sql_checked(ty, out),
+            PgValue::Bool(b) => b.to_sql_checked(ty, out),
+            PgValue::Timestamp(ts) => {
+                let dt = (*PG_EPOCH + Duration::microseconds(*ts)).naive_utc();
+                dt.to_sql_checked(ty, out)
+            }
             PgValue::Null => Ok(IsNull::Yes),
             PgValue::Toasted => Err("Toasted value was not substituted".into()),
         }

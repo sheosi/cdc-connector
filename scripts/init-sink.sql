@@ -2,7 +2,10 @@
 CREATE TABLE IF NOT EXISTS users(
     id SERIAL PRIMARY KEY,
     name text,
-    email text
+    email text,
+    active bool,
+    score bigint,
+    created_at timestamp
 );
 
 

@@ -7,7 +7,7 @@ license.workspace = true
 [dependencies]
 rdkafka = "0.39.0"
 tokio = { version = "1.53.1", features = ["full"] }
-tokio-postgres = "0.7.18"
+tokio-postgres = { version = "0.7.18", features = ["with-chrono-0_4"] }
 cdc-avro = {path = "../cdc-avro"}
 cdc-sink = {path = "../cdc-sink"}
 config = "0.15.25"
@@ -17,3 +17,4 @@ bumpalo = "3.20.3"
 metrics-exporter-prometheus = "0.18.3"
 metrics = "0.24.6"
 tracing = "0.1.44"
+chrono = "0.4.45"

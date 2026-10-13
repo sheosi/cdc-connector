@@ -147,6 +147,18 @@ fn parse_value<'a, F: FieldAccess>(
     field: &F,
     is_update: bool,
 ) -> Result<(PgValue<'a>, usize), DecoderError> {
+    fn parse_i64(l: usize, data: &[u8]) -> Result<i64, DecoderError> {
+        if l != 8 {
+            return Err(DecoderError::WrongFieldKind(FieldKind::Int8));
+        }
+
+        if data.len() < 13 {
+            return Err(DecoderError::TruncatedInput);
+        }
+
+        Ok(i64::from_be_bytes(data[5..13].try_into().expect("")))
+    }
+
     if data.len() == 0 {
         return Err(DecoderError::TruncatedInput);
     }
@@ -201,6 +213,19 @@ fn parse_value<'a, F: FieldAccess>(
                     PgValue::Int4(i32::from_be_bytes(data[5..9].try_into().expect("")))
                 }
                 FieldKind::Text => PgValue::Text(simdutf8::basic::from_utf8(&data[5..final_l])?),
+                FieldKind::Int8 => PgValue::Int8(parse_i64(l, data)?),
+                FieldKind::Bool => {
+                    if l != 1 {
+                        return Err(DecoderError::WrongFieldKind(FieldKind::Bool));
+                    }
+
+                    if data.len() < 6 {
+                        return Err(DecoderError::TruncatedInput);
+                    }
+
+                    PgValue::Bool(data[5] != 0)
+                }
+                FieldKind::Timestamp => PgValue::Timestamp(parse_i64(l, data)?),
             };
 
             Ok((bytes, final_l))

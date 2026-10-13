@@ -9,7 +9,10 @@ WHERE NOT EXISTS (SELECT 1 FROM pg_replication_slots WHERE slot_name = 'cdc_slot
 CREATE TABLE IF NOT EXISTS users (
     id serial PRIMARY KEY,
     name text,
-    email text
+    email text,
+    active bool,
+    score bigint,
+    created_at timestamp
 );
 
 -- 3. Publication (publishes changes for users to the slot)

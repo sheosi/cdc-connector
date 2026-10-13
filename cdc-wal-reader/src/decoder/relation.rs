@@ -185,10 +185,13 @@ fn byte_size_len(str_len: usize) -> usize {
     10 + str_len
 }
 
-fn kind_from_oid_mod(t_oid: u32, t_mod: u32) -> Result<FieldKind, DecoderError> {
+fn kind_from_oid_mod(t_oid: u32, _t_mod: u32) -> Result<FieldKind, DecoderError> {
     match t_oid {
+        16 => Ok(FieldKind::Bool),
+        20 => Ok(FieldKind::Int8),
         23 => Ok(FieldKind::Int4),
         25 => Ok(FieldKind::Text),
+        1114 => Ok(FieldKind::Timestamp),
         a => Err(DecoderError::InvalidOid(a)),
     }
 }
