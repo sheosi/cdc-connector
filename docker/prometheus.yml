@@ -1,0 +1,15 @@
+global:
+    scrape_interval: 5s
+
+scrape_configs:
+  - job_name: 'cdc-producer'
+    static_configs:
+      - targets: ['cdc-producer:9000']
+
+  - job_name: 'postgres-connector'
+    static_configs:
+      - targets: ['postgres-connector:9000']
+
+  - job_name: 'redpanda'
+    static_configs:
+      - targets: ['redpanda:9644']
