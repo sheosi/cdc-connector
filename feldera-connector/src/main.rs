@@ -260,9 +260,14 @@ mod test {
             rel: 16386,
         };
 
-        let json =
+        let lines =
             FelderaEvent::to_lines(FelderaEvent::convert_op_batches(vec![event], &fields).unwrap())
                 .unwrap();
-        assert!(json.contains(r#"{"insert":{"id":1,"name":"Ada"}}"#));
+
+        let parsed: serde_json::Value = serde_json::from_str(lines.trim()).unwrap();
+        assert_eq!(
+            parsed,
+            serde_json::json!({"insert": {"id": 1, "name": "Ada"}})
+        );
     }
 }
