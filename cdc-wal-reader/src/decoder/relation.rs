@@ -276,7 +276,6 @@ fn find_null_word(data: &[u8]) -> Option<usize> {
 
 #[cfg(test)]
 mod test {
-    use bumpalo::Bump;
     use bytes::Bytes;
 
     use crate::decoder::{

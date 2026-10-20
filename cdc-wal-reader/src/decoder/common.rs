@@ -78,7 +78,6 @@ pub fn get_example_rel_map() -> std::collections::HashMap<u32, RelationData, Ran
 
 #[cfg(test)]
 pub fn get_example_rel() -> Relation {
-    use bumpalo::collections::String;
     Relation {
         relation_oid: 1,
         name: "users".to_string(),
@@ -169,8 +168,8 @@ mod test {
     use cdc_avro::PgValue;
 
     use crate::decoder::common::{
-        DecoderError, col_byte_id, col_text_name, get_example_rel, get_example_rel_data,
-        get_example_rel_data_keys, get_new_tuple_data, get_old_tuple_data,
+        DecoderError, col_byte_id, col_text_name, get_example_rel_data, get_example_rel_data_keys,
+        get_new_tuple_data, get_old_tuple_data,
     };
 
     #[test]

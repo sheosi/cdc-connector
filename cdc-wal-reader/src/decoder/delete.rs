@@ -43,8 +43,6 @@ pub fn parse<'a>(
 
 #[cfg(test)]
 mod test {
-    use std::collections::HashMap;
-
     use ahash::RandomState;
     use bumpalo::{Bump, vec};
     use bytes::Bytes;
@@ -61,7 +59,6 @@ mod test {
     };
 
     fn get_tests_rel() -> Relation {
-        use bumpalo::collections::String;
         Relation {
             relation_oid: 16386,
             name: "users".to_string(),
@@ -87,9 +84,7 @@ mod test {
         }
     }
 
-    fn get_tests_rel_map(
-        arena: &Bump,
-    ) -> std::collections::HashMap<u32, RelationData, RandomState> {
+    fn get_tests_rel_map() -> std::collections::HashMap<u32, RelationData, RandomState> {
         let mut relation_map = std::collections::HashMap::default();
         relation_map.insert(16386u32, get_tests_rel_data());
 
@@ -179,7 +174,7 @@ mod test {
 
         let arena = Bump::new();
 
-        let relation_map = get_tests_rel_map(&arena);
+        let relation_map = get_tests_rel_map();
 
         let event = parse(&data, &relation_map, &arena);
 

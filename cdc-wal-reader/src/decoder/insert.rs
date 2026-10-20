@@ -53,12 +53,12 @@ mod test {
 
     use crate::decoder::{
         DecoderError,
-        common::{self, get_example_rel, get_example_rel_data, get_example_rel_map},
+        common::{self, get_example_rel_data, get_example_rel_map},
         insert::parse,
         relation::{KeyField, RelationData},
     };
 
-    fn complex_relation(arena: &Bump) -> RelationData {
+    fn complex_relation() -> RelationData {
         RelationData {
             inner: Relation {
                 relation_oid: 16390,
@@ -91,9 +91,9 @@ mod test {
         }
     }
 
-    fn complex_relation_map(arena: &Bump) -> HashMap<u32, RelationData, RandomState> {
+    fn complex_relation_map() -> HashMap<u32, RelationData, RandomState> {
         let mut rel_map = HashMap::default();
-        rel_map.insert(16390, complex_relation(arena));
+        rel_map.insert(16390, complex_relation());
         rel_map
     }
 
@@ -117,7 +117,7 @@ mod test {
 
         let event = parse(&data, &relation_map, &arena);
 
-        let mut row = bumpalo::vec![in &arena;
+        let row = bumpalo::vec![in &arena;
                 PgValue::Int4(1),
                 PgValue::Text("hello")
         ];
@@ -140,7 +140,7 @@ mod test {
 
         let arena = Bump::new();
 
-        let relation_map = complex_relation_map(&arena);
+        let relation_map = complex_relation_map();
 
         let event = parse(&data, &relation_map, &arena);
 
@@ -155,7 +155,7 @@ mod test {
             rel: 16390,
         };
 
-        assert_eq!(event, Ok((event_example, &complex_relation(&arena))));
+        assert_eq!(event, Ok((event_example, &complex_relation())));
     }
 
     #[test]

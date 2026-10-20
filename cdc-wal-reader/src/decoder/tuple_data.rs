@@ -240,12 +240,8 @@ mod test {
     use cdc_avro::{FieldKind::Int4, PgValue};
 
     use crate::decoder::{
-        DecoderError::{self, CorruptedInput, TruncatedInput},
-        common::{
-            col_byte_id, col_text_name, get_example_rel, get_example_rel_keys, get_new_tuple_data,
-            get_old_tuple_data,
-        },
-        relation, tuple_data,
+        DecoderError::{self, CorruptedInput},
+        common::{col_byte_id, col_text_name, get_example_rel, get_example_rel_keys},
     };
 
     use super::parse;

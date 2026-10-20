@@ -60,21 +60,16 @@ pub fn parse<'a>(
 
 #[cfg(test)]
 mod test {
-    use std::collections::HashMap;
-
-    use bumpalo::{Bump, collections::vec, vec};
+    use bumpalo::{Bump, vec};
     use bytes::Bytes;
     use cdc_avro::{
-        Field, FieldKind, PgValue, Relation,
+        PgValue,
         arena::{ChangeEvent, Op},
     };
 
     use crate::decoder::{
         DecoderError,
-        common::{
-            self, get_example_rel, get_example_rel_data, get_example_rel_data_keys,
-            get_example_rel_keys,
-        },
+        common::{self, get_example_rel_data, get_example_rel_data_keys},
         update::parse,
     };
 
