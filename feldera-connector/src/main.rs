@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use bumpalo::Bump;
 use cdc_avro::{
-    PgValue, Relation,
+    Field, PgValue, Relation,
     owned::{ChangeEvent, Op},
 };
 use cdc_sink::{KafkaConfig, KafkaSink, SinkError};
@@ -20,6 +20,9 @@ pub enum Error {
 
     #[error("Serialization {0}")]
     Serialization(#[from] serde_json::Error),
+
+    #[error("Unknow oid {0}")]
+    UnknownRelation(u32),
 }
 
 #[derive(Deserialize, Default)]
@@ -41,32 +44,75 @@ pub struct FelderaConnector {
     inner: Client,
     pipeline: String,
     table_names: TableNames,
+    field_names: HashMap<u32, Vec<String>>,
 }
+
+type FelderaRow<'a> = HashMap<&'a str, serde_json::Value>;
 
 #[derive(Serialize)]
 enum FelderaEvent<'a> {
-    Insert(Vec<PgValue<'a>>),
-    Delete(Vec<PgValue<'a>>),
+    #[serde(rename = "insert")]
+    Insert(FelderaRow<'a>),
+
+    #[serde(rename = "delete")]
+    Delete(FelderaRow<'a>),
 }
 
 impl<'a> FelderaEvent<'a> {
-    fn convert_op_batches(batch: Vec<ChangeEvent<'a>>) -> Vec<FelderaEvent<'a>> {
+    fn convert_row(
+        oid: u32,
+        values: Vec<PgValue<'_>>,
+        field_names: &'a HashMap<u32, Vec<String>>,
+    ) -> Result<FelderaRow<'a>, Error> {
+        if let Some(fields) = field_names.get(&oid) {
+            let val = values
+                .iter()
+                .zip(fields)
+                .map(|(v, f)| (f.as_str(), v.to_json_value()))
+                .collect();
+
+            Ok(val)
+        } else {
+            Err(Error::UnknownRelation(oid))
+        }
+    }
+
+    fn convert_op_batches(
+        batch: Vec<ChangeEvent<'a>>,
+        field_names: &'a HashMap<u32, Vec<String>>,
+    ) -> Result<Vec<FelderaEvent<'a>>, Error> {
         let mut result = Vec::with_capacity(batch.len());
 
         for op in batch.into_iter() {
             match op.op {
-                Op::Insert { row } => result.push(FelderaEvent::Insert(row)),
+                Op::Insert { row } => result.push(FelderaEvent::Insert(Self::convert_row(
+                    op.rel,
+                    row,
+                    field_names,
+                )?)),
                 Op::Update { old, row } => {
-                    result.push(FelderaEvent::Delete(old));
-                    result.push(FelderaEvent::Insert(row));
+                    result.push(FelderaEvent::Delete(Self::convert_row(
+                        op.rel,
+                        old,
+                        field_names,
+                    )?));
+                    result.push(FelderaEvent::Insert(Self::convert_row(
+                        op.rel,
+                        row,
+                        field_names,
+                    )?));
                 }
                 Op::Delete { old } => {
-                    result.push(FelderaEvent::Delete(old));
+                    result.push(FelderaEvent::Delete(Self::convert_row(
+                        op.rel,
+                        old,
+                        field_names,
+                    )?));
                 }
             }
         }
 
-        result
+        Ok(result)
     }
 
     fn to_lines(batch: Vec<Self>) -> Result<String, serde_json::Error> {
@@ -86,10 +132,16 @@ impl FelderaConnector {
     pub fn new(base_url: &str, pipeline: String, relations: HashMap<u32, Relation>) -> Self {
         let inner = Client::new(base_url, feldera_rest_api::RetryPolicy::default());
 
+        let mut field_names = HashMap::new();
+        for (oid, rel) in relations.iter() {
+            field_names.insert(*oid, extract_names(&rel.fields));
+        }
+
         Self {
             inner,
             pipeline,
             table_names: TableNames::from_rels(&relations),
+            field_names,
         }
     }
 
@@ -98,7 +150,10 @@ impl FelderaConnector {
         table: &str,
         records: Vec<ChangeEvent<'a>>,
     ) -> Result<(), Error> {
-        let json_str = FelderaEvent::to_lines(FelderaEvent::convert_op_batches(records))?;
+        let json_str = FelderaEvent::to_lines(FelderaEvent::convert_op_batches(
+            records,
+            &self.field_names,
+        )?)?;
 
         self.inner
             .http_input()
@@ -106,6 +161,7 @@ impl FelderaConnector {
             .table_name(table)
             .format("json")
             .update_format(feldera_types::format::json::JsonUpdateFormat::InsertDelete)
+            .force(false)
             .body(json_str)
             .send()
             .await?;
@@ -130,7 +186,10 @@ impl KafkaSink for FelderaConnector {
             vec![event],
         )
         .await
-        .map_err(|e| SinkError::Platform(e.to_string()))?;
+        .map_err(|e| match e {
+            Error::UnknownRelation(oid) => SinkError::UnknownRelation(oid),
+            e => SinkError::Platform(e.to_string()),
+        })?;
 
         Ok(())
     }
@@ -138,9 +197,15 @@ impl KafkaSink for FelderaConnector {
     async fn on_relation(&mut self, relation: Relation) -> Result<(), SinkError> {
         self.table_names
             .insert(relation.relation_oid, relation.name);
+        self.field_names
+            .insert(relation.relation_oid, extract_names(&relation.fields));
 
         Ok(())
     }
+}
+
+fn extract_names(fields: &[Field]) -> Vec<String> {
+    fields.iter().map(|f| f.name.clone()).collect()
 }
 
 #[tokio::main]
@@ -154,6 +219,8 @@ async fn main() {
         .expect("Failed to load feldera-connector config")
         .try_deserialize()
         .expect("Feldera-connector config was malformed");
+
+    println!("{}", config.kafka.groupid);
 
     cdc_sink::init_metrics(config.metrics);
 

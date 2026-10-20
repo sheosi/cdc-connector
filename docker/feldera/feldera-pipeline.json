@@ -1,0 +1,5 @@
+{
+  "name": "cdc-pipeline",
+  "description": "CDC pipeline",
+  "program_code": "CREATE TABLE users (\n  id INT NOT NULL PRIMARY KEY,\n  name STRING,\n  email STRING,\n  active BOOL,\n  score BIGINT,\n  created_at TIMESTAMP\n);\n\nCREATE VIEW users_count AS SELECT COUNT(*) FROM users;"
+}

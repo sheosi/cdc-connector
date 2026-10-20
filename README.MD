@@ -53,6 +53,7 @@ Open:
 * Grafana: http://localhost:3000/d/dg18rqz7euhvkc/cdc-dashboard (admin / admin)
 * Prometheus: http://localhost:9090
 * Redpanda Console: http://localhost:8079
+* Feldera: http://localthost:8081
 
 ## Configuration
 
@@ -87,7 +88,7 @@ Also, checkout `config/postgres-connector.toml`
 | `PG_CONN_POSTGRES_PORT` | `5432` | Sink DB port |
 | `PG_CONN_KAFKA_BROKERS` | None | Kafka brokers host and port |
 | `PG_CONN_KAFKA_TOPIC` | `cdc` | Parent topic to read all the events, relations and lsn from |
-| `PG_CONN_KAFKA_GROUP_ID` | `default` | The Kafka group id this pertains |
+| `PG_CONN_KAFKA_GROUPID` | `default` | The Kafka group id this pertains |
 | `PG_CONN_METRICS_PORT` |  `9000` | Metrics HTTP port |
 
 ### feldera-connector
@@ -100,7 +101,7 @@ Also, checkout `config/feldera-connector.toml`
 | `FELD_CONN_FELDERA_PIPELINE` | `` | Feldera pipeline |
 | `FELD_CONN_KAFKA_BROKERS` | None | Kafka brokers to host and port |
 | `FELD_CONN_KAFKA_TOPIC` | `cdc` | Parent topic to read all the events, relations and lsn from |
-| `FELD_CONN_KAFKA_GROUP_ID` | `default` | The Kafka group id this pertains |
+| `FELD_CONN_KAFKA_GROUPID` | `default` | The Kafka group id this pertains |
 
 ## Exactly-once
 

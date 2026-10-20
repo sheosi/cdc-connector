@@ -9,4 +9,4 @@ port = 5401
 brokers="localhost:9092"
 topic="example-topic"
 key="default"
-group_id="default"
+groupid="default"

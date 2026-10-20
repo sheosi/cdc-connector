@@ -238,8 +238,27 @@ impl PrepareCommand for PostgresConnector {
             .env("PG_CONN_POSTGRES_PORT", "5401")
             .env("PG_CONN_KAFKA_BROKERS", "localhost:9092")
             .env("PG_CONN_KAFKA_TOPIC", "example-topic")
-            .env("PG_CONN_KAFKA_GROUP_ID", "default")
+            .env("PG_CONN_KAFKA_GROUPID", "default")
             .env("PG_CONN_METRICS_PORT", "9002")
+            .env("RUST_LOG", "debug");
+
+        cmd
+    }
+}
+
+pub struct FelderaConnector {}
+
+impl PrepareCommand for FelderaConnector {
+    fn prepare_cmd(&self) -> Command {
+        let mut cmd = Command::new("../target/debug/postgres-connector");
+        cmd.env("FELD_CONN_POSTGRES_HOST", "127.0.0.1")
+            .env("FELD_CONN_POSTGRES_USER", "cdc")
+            .env("FELD_CONN_POSTGRES_PASSWORD", "cdc")
+            .env("FELD_CONN_POSTGRES_PORT", "5401")
+            .env("FELD_CONN_KAFKA_BROKERS", "localhost:9092")
+            .env("FELD_CONN_KAFKA_TOPIC", "example-topic")
+            .env("FELD_CONN_KAFKA_GROUPID", "default")
+            .env("FELD_CONN_METRICS_PORT", "9002")
             .env("RUST_LOG", "debug");
 
         cmd

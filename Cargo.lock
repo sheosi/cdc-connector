@@ -777,6 +777,7 @@ name = "cdc-avro"
 version = "0.1.0"
 dependencies = [
  "bumpalo",
+ "chrono",
  "maplit",
  "serde",
  "serde_avro_fast",

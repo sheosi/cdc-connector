@@ -10,6 +10,10 @@ scrape_configs:
     static_configs:
       - targets: ['postgres-connector:9000']
 
+  - job_name: 'feldera-connector'
+    static_configs:
+    - targets: ['feldera-connector:9000']
+
   - job_name: 'redpanda'
     static_configs:
       - targets: ['redpanda:9644']

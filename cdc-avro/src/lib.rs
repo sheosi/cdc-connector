@@ -1,3 +1,4 @@
+use chrono::DateTime;
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
     de::{MapAccess, Visitor},
@@ -364,6 +365,7 @@ impl<'de: 'a, 'a> Deserialize<'de> for PgValue<'a> {
         deserializer.deserialize_map(PgValueVisitor(std::marker::PhantomData))
     }
 }
+
 impl<'a> From<&'a str> for PgValue<'a> {
     fn from(value: &'a str) -> Self {
         Self::Text(value)
@@ -373,6 +375,28 @@ impl<'a> From<&'a str> for PgValue<'a> {
 impl From<i32> for PgValue<'_> {
     fn from(value: i32) -> Self {
         Self::Int4(value)
+    }
+}
+
+impl<'a> PgValue<'a> {
+    pub fn to_json_value(&self) -> serde_json::Value {
+        match self {
+            PgValue::Null => serde_json::Value::Null,
+            PgValue::Text(s) => serde_json::Value::String(s.to_string()),
+            PgValue::Int4(n) => serde_json::Value::Number((*n).into()),
+            PgValue::Int8(n) => serde_json::Value::Number((*n).into()),
+            PgValue::Bool(b) => serde_json::Value::Bool(*b),
+            PgValue::Timestamp(t) => {
+                let pg_epoch_to_unix_micros = 946_684_800_000_000i64;
+                match DateTime::from_timestamp_micros(*t + pg_epoch_to_unix_micros) {
+                    Some(dt) => {
+                        serde_json::Value::String(dt.format("%Y-%m-%d %H:%M:%S%.6f").to_string())
+                    }
+                    None => serde_json::Value::Null,
+                }
+            }
+            PgValue::Toasted => serde_json::Value::Null,
+        }
     }
 }
 

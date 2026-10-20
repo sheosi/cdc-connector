@@ -45,6 +45,37 @@ services:
       timeout: 5s
       retries: 10
 
+  feldera:
+    image: images.feldera.com/feldera/pipeline-manager:latest
+    stop_grace_period: 0s
+    container_name: cdc-feldera
+    ports:
+      - "8081:8080"
+    command:
+      - --allowed-origins
+      - "http://localhost:8081"
+    environment:
+      - RUST_LOG=info,actix_web=error,tokio_postgres=info
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --request GET --url http://localhost:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  feldera-init:
+    image: docker.io/curlimages/curl:latest
+    container_name: cdc-feldera-init
+    depends_on:
+      feldera:
+        condition: service_healthy
+    volumes:
+      - ./docker/feldera/init.sh:/init.sh:ro
+      - ./docker/feldera/feldera-pipeline.json:/pipeline.json:ro
+
+    entrypoint: ["sh", "/init.sh"]
+    restart: "no"
+
+
   redpanda:
     image: docker.redpanda.com/redpandadata/redpanda:v24.2.9
     container_name: cdc-redpanda
@@ -125,7 +156,7 @@ services:
       PG_CONN_KAFKA_BROKERS: "redpanda:29092"
       PG_CONN_METRICS_PORT: "9000"
       PG_CONN_KAFKA_TOPIC: "example-topic"
-      PG_CONN_KAFKA_GROUP_ID: "default"
+      PG_CONN_KAFKA_GROUPID: "default"
 
     build:
       context: .
@@ -139,30 +170,31 @@ services:
         condition: service_healthy
       redpanda:
         condition: service_healthy
-#
-#   feldera-connector:
-#     environment:
-#       FELD_CONN_KAFKA_BROKERS = ""
-#       FELD_CONN_KAFKA_TOPIC = "example-topic"
-#       FELD_CONN_KAFKA_KEY = "default"
-#       FELD_CONN_KAFKA_GROUP_ID = "default"
-#       FELD_CONN_FELDERA_URL = ""
-#       FELD_CONN_FELDERA_PIPELINE = ""
-#
-#
-#     build:
-#       context: .
-#       dockerfile: Dockerfile
-#     container_name: cdc-postgres-connector
-#     command: ["/app/postgres-connector"]
-#     ports:
-#       - "9001:9001"
-#     depends_on:
-#       postgres-sink:
-#         condition: service_healthy
-#       redpanda:
-#         condition: service_healthy
-#
+
+  feldera-connector:
+    environment:
+      FELD_CONN_KAFKA_BROKERS: "redpanda:29092"
+      FELD_CONN_KAFKA_TOPIC: "example-topic"
+      FELD_CONN_KAFKA_GROUPID: "feldera"
+      FELD_CONN_METRICS_PORT: "9002"
+      FELD_CONN_FELDERA_URL: "http://feldera:8080"
+      FELD_CONN_FELDERA_PIPELINE: "cdc-pipeline"
+
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cdc-feldera-connector
+    command: ["/app/feldera-connector"]
+    ports:
+      - "9002:9002"
+    depends_on:
+      redpanda:
+        condition: service_healthy
+      feldera:
+        condition: service_healthy
+      feldera-init:
+        condition: service_completed_successfully
+
   prometheus:
     image: docker.io/prom/prometheus:v2.55.0
     container_name: cdc-prometheus

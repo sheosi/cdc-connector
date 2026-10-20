@@ -2,7 +2,7 @@
 brokers=""
 topic="example-topic"
 key="default"
-group_id="default"
+groupid="default"
 
 [feldera]
 url = ""
