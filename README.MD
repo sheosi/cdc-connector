@@ -53,7 +53,7 @@ Open:
 * Grafana: http://localhost:3000/d/dg18rqz7euhvkc/cdc-dashboard (admin / admin)
 * Prometheus: http://localhost:9090
 * Redpanda Console: http://localhost:8079
-* Feldera: http://localthost:8081
+* Feldera: http://localhost:8081
 
 ## Configuration
 
@@ -102,6 +102,7 @@ Also, checkout `config/feldera-connector.toml`
 | `FELD_CONN_KAFKA_BROKERS` | None | Kafka brokers to host and port |
 | `FELD_CONN_KAFKA_TOPIC` | `cdc` | Parent topic to read all the events, relations and lsn from |
 | `FELD_CONN_KAFKA_GROUPID` | `default` | The Kafka group id this pertains |
+| `FELD_CONN_METRICS_PORT` |  `9000` | Metrics HTTP port |
 
 ## Exactly-once
 
@@ -140,6 +141,10 @@ To see the logs:
 ```shell
 cargo test --workspace -- --nocapture
 ```
+
+### Feldera sink
+
+The Feldera sink is functional and has been verified manually against a local Feldera instance (see `docker-compose.yml`). Automated integration tests for the Feldera sink are not included because the Feldera container image and pipeline compilation add 1-2 minutes per test run, which is too heavy for the current test suite.
 
 ## Known limitations
 
