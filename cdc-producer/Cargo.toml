@@ -24,4 +24,3 @@ tracing-subscriber = "0.3.23"
 [dev-dependencies]
 inventory = "0.3.24"
 libtest-mimic = "0.8.2"
-integration-tests = {path = "../integration-tests"}

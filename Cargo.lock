@@ -811,7 +811,6 @@ dependencies = [
  "cdc-wal-reader",
  "config",
  "futures-util",
- "integration-tests",
  "inventory",
  "libtest-mimic",
  "metric",
@@ -2370,23 +2369,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "14c00403deb17c3221a1fe4fb571b9ed0370b3dcd116553c77fa294a3d918699"
 
 [[package]]
-name = "integration-tests"
-version = "0.1.0"
-dependencies = [
- "integration-tests-macros",
- "inventory",
- "libtest-mimic",
-]
-
-[[package]]
-name = "integration-tests-macros"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "unsynn",
-]
-
-[[package]]
 name = "inventory"
 version = "0.3.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2872,12 +2854,6 @@ name = "multiversion_no_op"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "743fb55ba31b18fb1ecef6bdc9aa2743314978ac084044301a7eee33fb99a20d"
-
-[[package]]
-name = "mutants"
-version = "0.0.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc0287524726960e07b119cebd01678f852f147742ae0d925e6a520dca956126"
 
 [[package]]
 name = "native-tls"
@@ -5370,17 +5346,6 @@ name = "unsafe-libyaml"
 version = "0.2.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "673aac59facbab8a9007c7f6108d11f63b603f7cabff99fabf650fea5c32b861"
-
-[[package]]
-name = "unsynn"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "501a7adf1a4bd9951501e5c66621e972ef8874d787628b7f90e64f936ef7ec0a"
-dependencies = [
- "mutants",
- "proc-macro2",
- "rustc-hash",
-]
 
 [[package]]
 name = "untrusted"
