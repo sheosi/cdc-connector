@@ -4,7 +4,7 @@ use simdutf8::basic::from_utf8 as simd_from_utf8;
 
 use crate::decoder::DecoderError;
 
-fn extract_string<'a>(data: &[u8]) -> Result<String, DecoderError> {
+fn extract_string(data: &[u8]) -> Result<String, DecoderError> {
     let nul = find_null_word(data).ok_or(DecoderError::TruncatedInput)?;
 
     // Fast path: usually postgres identifiers are pure ascii
@@ -90,7 +90,7 @@ impl RelationData {
                     if f.is_key {
                         Some(KeyField {
                             name: f.name.clone(),
-                            kind: f.kind.clone(),
+                            kind: f.kind,
                         })
                     } else {
                         None

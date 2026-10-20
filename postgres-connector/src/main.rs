@@ -20,7 +20,7 @@ use tracing::debug;
 
 use crate::statements::{DeleteStatementCache, UpsertStatementCache};
 
-const PG_EPOCH: LazyLock<DateTime<Utc>> =
+static PG_EPOCH: LazyLock<DateTime<Utc>> =
     LazyLock::new(|| DateTime::UNIX_EPOCH + Duration::seconds(946_684_800));
 
 mod statements;
@@ -117,7 +117,7 @@ impl KafkaSink for PostgresSink {
     ) -> Result<(), SinkError> {
         debug!("Got event: {:?}", &event);
 
-        if let Err(()) = event.op.merge_toasted() {
+        if event.op.merge_toasted().is_err() {
             return Err(SinkError::ToastedInKeyOnly);
         }
 
@@ -132,10 +132,10 @@ impl KafkaSink for PostgresSink {
                 // so that it can be reset later.
                 {
                     let keys: bumpalo::collections::Vec<'_, ToSqlWrapper> =
-                        row.into_iter().map(|v| ToSqlWrapper(v)).collect_in(arena);
+                        row.into_iter().map(ToSqlWrapper).collect_in(arena);
 
                     self.client
-                        .execute(&insert_stmt.stmt, &extract_keys_ref(&arena, &keys))
+                        .execute(&insert_stmt.stmt, &extract_keys_ref(arena, &keys))
                         .await
                         .map_err(|e| SinkError::Platform(e.to_string()))?;
                 }
@@ -143,16 +143,16 @@ impl KafkaSink for PostgresSink {
             Op::Update { old: _, row } => {
                 let update_stmt = self
                     .upsert_stmt_cache
-                    .get(&self.client, event.rel, &self.relation_cache, &arena)
+                    .get(&self.client, event.rel, &self.relation_cache, arena)
                     .await?;
 
                 // Confine this block to confine the reference to the arena
                 // so that it can be reset later.
                 {
-                    let keys = extract_keys(&arena, row);
+                    let keys = extract_keys(arena, row);
 
                     self.client
-                        .execute(&update_stmt.stmt, &extract_keys_ref(&arena, &keys))
+                        .execute(&update_stmt.stmt, &extract_keys_ref(arena, &keys))
                         .await
                         .map_err(|e| SinkError::Platform(e.to_string()))?;
                 }
@@ -161,7 +161,7 @@ impl KafkaSink for PostgresSink {
             Op::Delete { old } => {
                 let delete_stmt = self
                     .delete_stmt_cache
-                    .get(&self.client, event.rel, &self.relation_cache, &arena)
+                    .get(&self.client, event.rel, &self.relation_cache, arena)
                     .await?;
 
                 let key_identity = self.relation_cache.identities.get(&event.rel);
@@ -170,9 +170,7 @@ impl KafkaSink for PostgresSink {
                 // so that it can be reset later.
                 {
                     let keys: Vec<ToSqlWrapper> = match key_identity {
-                        Some(RelationIdentity::Full) => {
-                            old.into_iter().map(|v| ToSqlWrapper(v)).collect()
-                        }
+                        Some(RelationIdentity::Full) => old.into_iter().map(ToSqlWrapper).collect(),
                         Some(RelationIdentity::Keys(ids)) => old
                             .into_iter()
                             .enumerate()
@@ -188,10 +186,7 @@ impl KafkaSink for PostgresSink {
                     };
 
                     self.client
-                        .execute(
-                            &delete_stmt.stmt,
-                            &extract_keys_ref(&arena, &keys).as_slice(),
-                        )
+                        .execute(&delete_stmt.stmt, extract_keys_ref(arena, &keys).as_slice())
                         .await
                         .map_err(|e| SinkError::Platform(e.to_string()))?;
                 }
@@ -270,6 +265,7 @@ pub struct RelationCache {
 }
 
 impl RelationCache {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self {
             identities: HashMap::new(),
@@ -279,10 +275,10 @@ impl RelationCache {
         }
     }
 
-    pub fn from_rels<'a>(rels: &HashMap<u32, Relation>) -> Self {
+    pub fn from_rels(rels: &HashMap<u32, Relation>) -> Self {
         let identities = rels
             .iter()
-            .map(|(i, v)| (*i, extract_key_identity(&v)))
+            .map(|(i, v)| (*i, extract_key_identity(v)))
             .collect();
 
         let fields = rels
@@ -297,7 +293,7 @@ impl RelationCache {
 
         Self {
             identities,
-            table_names: TableNames::from_rels(&rels),
+            table_names: TableNames::from_rels(rels),
             fields,
             keys,
         }
@@ -350,7 +346,7 @@ fn extract_keys<'a>(
     arena: &'a Bump,
     row: Vec<PgValue<'a>>,
 ) -> bumpalo::collections::Vec<'a, ToSqlWrapper<'a>> {
-    row.into_iter().map(|v| ToSqlWrapper(v)).collect_in(arena)
+    row.into_iter().map(ToSqlWrapper).collect_in(arena)
 }
 
 fn extract_keys_ref<'a>(

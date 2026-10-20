@@ -179,7 +179,7 @@ impl KafkaClient {
         let rel_topic = format!("{}.relations", self.topic);
 
         self.consumer
-            .subscribe(&vec![topic.as_str(), rel_topic.as_str()])
+            .subscribe(&[topic.as_str(), rel_topic.as_str()])
             .expect("Can't subscribe to specified topics");
 
         let mut arena = Bump::with_capacity(4096);
@@ -260,7 +260,7 @@ impl KafkaClient {
 }
 
 pub fn init_metrics(config: MetricsConfig) {
-    let addr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED.into(), config.port));
+    let addr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, config.port));
 
     let builder = metrics_exporter_prometheus::PrometheusBuilder::new();
     builder
@@ -283,17 +283,14 @@ pub fn init_metrics(config: MetricsConfig) {
 
 pub struct TableNames(HashMap<u32, String, RandomState>);
 
+#[allow(clippy::new_without_default)]
 impl TableNames {
     pub fn new() -> Self {
         Self(HashMap::default())
     }
 
     pub fn from_rels(rels: &HashMap<u32, Relation>) -> Self {
-        Self(
-            rels.into_iter()
-                .map(|(i, r)| (*i, r.name.clone()))
-                .collect(),
-        )
+        Self(rels.iter().map(|(i, r)| (*i, r.name.clone())).collect())
     }
 
     #[inline]

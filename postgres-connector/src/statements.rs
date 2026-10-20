@@ -30,14 +30,14 @@ impl DeleteStatementCache {
                 let keys = relation_cache
                     .keys
                     .get(&relation)
-                    .ok_or_else(|| SinkError::UnknownRelation(relation))?;
+                    .ok_or(SinkError::UnknownRelation(relation))?;
                 Ok(e.insert(
                     DeleteStatement::new(
                         client,
                         relation_cache
                             .table_names
                             .get(relation)
-                            .ok_or_else(|| SinkError::UnknownRelation(relation))?,
+                            .ok_or(SinkError::UnknownRelation(relation))?,
                         keys.as_slice(),
                         arena,
                     )
@@ -75,7 +75,7 @@ impl UpsertStatementCache {
                         relation_cache
                             .table_names
                             .get(rel)
-                            .ok_or_else(|| SinkError::UnknownRelation(rel))?,
+                            .ok_or(SinkError::UnknownRelation(rel))?,
                         &relation_cache.fields[&rel],
                         &relation_cache.keys[&rel],
                         arena,
@@ -119,7 +119,7 @@ impl UpsertStatement {
         stmt_str.push_str(table);
         stmt_str.push_str(" (");
         for (i, r) in rows.iter().enumerate() {
-            stmt_str.push_str(&r);
+            stmt_str.push_str(r);
 
             if i < rows.len() - 1 {
                 stmt_str.push(',');

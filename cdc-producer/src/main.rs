@@ -187,7 +187,7 @@ async fn read_lsn(kafka_config: &KafkaConfig) -> Result<u64, rdkafka::error::Kaf
         .create()
         .expect("Consumer creation failed");
 
-    consumer.subscribe(&[&format!("{}.lsn", &kafka_config.topic)])?;
+    consumer.subscribe(&[&format!("{}.lsn", kafka_config.topic)])?;
 
     let mut latest_lsn = 0;
 
@@ -196,12 +196,11 @@ async fn read_lsn(kafka_config: &KafkaConfig) -> Result<u64, rdkafka::error::Kaf
     loop {
         match tokio::time::timeout(Duration::from_millis(500), consumer.stream().next()).await {
             Ok(Some(Ok(msg))) => match msg.payload_view::<[u8]>() {
-                Some(Ok(lsn_bytes)) => match lsn_bytes.try_into() {
-                    Ok(lsn_slice) => {
+                Some(Ok(lsn_bytes)) => {
+                    if let Ok(lsn_slice) = lsn_bytes.try_into() {
                         latest_lsn = u64::from_be_bytes(lsn_slice);
                     }
-                    Err(_) => {}
-                },
+                }
                 Some(Err(())) => {
                     // This shouldn't fail
                     panic!("");
@@ -255,11 +254,11 @@ async fn check_topics(
         .set("bootstrap.servers", &kafka_config.brokers)
         .create()?;
 
-    ensure_topic(&admin, &format!("{}.lsn", &kafka_config.topic), 1, 1, true).await?;
+    ensure_topic(&admin, &format!("{}.lsn", kafka_config.topic), 1, 1, true).await?;
 
     ensure_topic(
         &admin,
-        &format!("{}.relations", &kafka_config.topic),
+        &format!("{}.relations", kafka_config.topic),
         1,
         1,
         true,
@@ -271,7 +270,7 @@ async fn check_topics(
             &admin,
             &format!(
                 "{}.events.{}.{}",
-                &kafka_config.topic, &db_topic.namespace, &db_topic.name
+                kafka_config.topic, db_topic.namespace, db_topic.name
             ),
             1,
             1,
@@ -296,7 +295,7 @@ async fn main() -> Result<()> {
         .expect("cdc-producer config is malformated");
 
     let addr = SocketAddr::V4(SocketAddrV4::new(
-        Ipv4Addr::UNSPECIFIED.into(),
+        Ipv4Addr::UNSPECIFIED,
         own_config.metrics.port,
     ));
 

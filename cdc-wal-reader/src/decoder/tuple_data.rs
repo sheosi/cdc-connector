@@ -20,8 +20,8 @@ pub fn parse<'a>(
         let mut last_pos = 2;
         let mut cols = Vec::with_capacity_in(N, arena);
 
-        for i in 0..N {
-            let (value, len) = parse_value(&data[last_pos..], &fields[i], is_update)?;
+        for field in fields.iter().take(N) {
+            let (value, len) = parse_value(&data[last_pos..], field, is_update)?;
 
             last_pos += len;
 
@@ -159,7 +159,7 @@ fn parse_value<'a, F: FieldAccess>(
         Ok(i64::from_be_bytes(data[5..13].try_into().expect("")))
     }
 
-    if data.len() == 0 {
+    if data.is_empty() {
         return Err(DecoderError::TruncatedInput);
     }
 

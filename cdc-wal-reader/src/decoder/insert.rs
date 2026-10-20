@@ -21,7 +21,7 @@ pub fn parse<'a>(
 
     let relation = relation_map
         .get(&relation_oid)
-        .ok_or_else(|| DecoderError::UnknownRelation(relation_oid))?;
+        .ok_or(DecoderError::UnknownRelation(relation_oid))?;
 
     let row = get_new_tuple_data(&data[5..], &relation.inner.fields, arena, false)?;
 

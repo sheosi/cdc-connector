@@ -25,9 +25,9 @@ pub fn parse<'a>(
 
     let relation = relation_map
         .get(&relation_oid)
-        .ok_or_else(|| DecoderError::UnknownRelation(relation_oid))?;
+        .ok_or(DecoderError::UnknownRelation(relation_oid))?;
 
-    let (old, old_data_end) = match get_old_tuple_data(&data[5..], &relation, &arena) {
+    let (old, old_data_end) = match get_old_tuple_data(&data[5..], relation, arena) {
         Ok(r) => r,
 
         // Just empty
@@ -44,7 +44,7 @@ pub fn parse<'a>(
     let new_data = get_new_tuple_data(
         &data[old_data_end + 5..],
         &relation.inner.fields,
-        &arena,
+        arena,
         true,
     )?;
 

@@ -152,7 +152,7 @@ impl TestBinary {
         if let Some(out) = child.stdout.take() {
             let buf = stdout.clone();
             std::thread::spawn(move || {
-                for line in BufReader::new(out).lines().flatten() {
+                for line in BufReader::new(out).lines().map_while(Result::ok) {
                     println!("[stdout] {line}");
                     buf.lock().unwrap().push(line);
                 }
@@ -162,7 +162,7 @@ impl TestBinary {
         if let Some(err) = child.stderr.take() {
             let buf = stderr.clone();
             std::thread::spawn(move || {
-                for line in BufReader::new(err).lines().flatten() {
+                for line in BufReader::new(err).lines().map_while(Result::ok) {
                     eprintln!("[stderr] {line}");
                     buf.lock().unwrap().push(line);
                 }
@@ -333,6 +333,8 @@ pub struct InfraOptions {
     pub pg_connector_json: bool,
 }
 
+// Let's keep this explicit in case we want to do something else in the future
+#[allow(clippy::derivable_impls)]
 impl Default for InfraOptions {
     fn default() -> Self {
         Self {
@@ -489,7 +491,7 @@ pub async fn read_lsn() -> Result<u64, rdkafka::error::KafkaError> {
         .create()
         .expect("Consumer creation failed");
 
-    consumer.subscribe(&[&"example-topic.lsn"])?;
+    consumer.subscribe(&["example-topic.lsn"])?;
 
     let mut latest_lsn = 0;
 
@@ -500,12 +502,11 @@ pub async fn read_lsn() -> Result<u64, rdkafka::error::KafkaError> {
     loop {
         match tokio::time::timeout(Duration::from_millis(500), consumer.stream().next()).await {
             Ok(Some(Ok(msg))) => match msg.payload_view::<[u8]>() {
-                Some(Ok(lsn_bytes)) => match lsn_bytes.try_into() {
-                    Ok(lsn_slice) => {
+                Some(Ok(lsn_bytes)) => {
+                    if let Ok(lsn_slice) = lsn_bytes.try_into() {
                         latest_lsn = u64::from_be_bytes(lsn_slice);
                     }
-                    Err(_) => {}
-                },
+                }
                 Some(Err(())) => {
                     // This shouldn't fail
                     panic!("");

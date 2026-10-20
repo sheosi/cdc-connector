@@ -97,7 +97,7 @@ pub async fn start_wal_input<P: Producer>(
     while let Some(ev) = client.recv().await? {
         match ev {
             ReplicationEvent::XLogData { wal_end, data, .. } => {
-                if data.len() == 0 {
+                if data.is_empty() {
                     debug!("Got empty data")
                 }
 
@@ -221,10 +221,8 @@ pub async fn start_wal_input<P: Producer>(
     }
 
     // The connection was closed
-    if currently_in_transaction {
-        if let Err(e) = producer.abort_transaction().await {
-            error!(error = ?e, "Failed to abort final transaction");
-        }
+    if currently_in_transaction && let Err(e) = producer.abort_transaction().await {
+        error!(error = ?e, "Failed to abort final transaction");
     }
 
     Ok(())

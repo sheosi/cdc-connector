@@ -49,6 +49,8 @@ pub mod arena {
 
 /// Makes use of globally allocated vectors. We can provide deserialization here.
 pub mod owned {
+    use std::fmt::Display;
+
     use serde::{Deserialize, Serialize};
 
     use super::PgValue;
@@ -78,14 +80,14 @@ pub mod owned {
             }
         }
 
-        pub fn merge_toasted(&mut self) -> Result<(), ()> {
+        pub fn merge_toasted(&mut self) -> Result<(), ToastedOnKeyIdenity> {
             if let Op::Update { old, row } = self {
                 for (i, v) in row.iter_mut().enumerate() {
                     if matches!(v, PgValue::Toasted) {
                         if i < old.len() {
                             *v = old[i].clone();
                         } else {
-                            return Err(());
+                            return Err(ToastedOnKeyIdenity);
                         }
                     }
                 }
@@ -117,19 +119,30 @@ pub mod owned {
             serde_avro_fast::to_datum(&self, std::vec::Vec::with_capacity(256), &mut config)
         }
     }
+
+    #[derive(Debug)]
+    pub struct ToastedOnKeyIdenity;
+
+    impl Display for ToastedOnKeyIdenity {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("")
+        }
+    }
+
+    impl std::error::Error for ToastedOnKeyIdenity {}
 }
 
 const CHANGE_EVENT_SCHEMA_STR: &str = r#"{"type":"record","name":"ChangeEvent","fields":[{"name":"op","type":[{"type":"record","name":"Insert","fields":[{"name":"row","type":{"type":"array","items":[{"type":"record","name":"Text","fields":[{"name":"Text","type":"string"}]},{"type":"record","name":"Int4","fields":[{"name":"Int4","type":"long"}]},{"type":"record","name":"Toasted","fields":[{"name":"Toasted","type":"null"}]},{"type":"record","name":"Null","fields":[{"name":"Null","type":"null"}]},{"type":"record","name":"Int8","fields":[{"name":"Int8","type":"long"}]},{"type":"record","name":"Bool","fields":[{"name":"Bool","type":"boolean"}]},{"type":"record","name":"Timestamp","fields":[{"name":"Timestamp","type":"long"}]}]}}]},{"type":"record","name":"Update","fields":[{"name":"old","type":{"type":"array","items":["Text","Int4","Null","Toasted","Int8","Bool","Timestamp"]}},{"name":"row","type":{"type":"array","items":["Text","Int4","Null","Toasted","Int8","Bool","Timestamp"]}}]},{"type":"record","name":"Delete","fields":[{"name":"old","type":{"type":"array","items":["Text","Int4","Null","Toasted","Int8","Bool","Timestamp"]}}]}]},{"name":"rel","type":"long"}]}"#;
 
 const RELATION_SCHEMA_STR: &str = r#"{"type":"record","name":"Relation","fields":[{"name":"relation_oid","type":"long"},{"name":"namespace","type":"string"},{"name":"name","type":"string"},{"name":"fields","type":{"type":"array","items":{"type":"record","name":"Field","fields":[{"name":"is_key","type":"boolean"},{"name":"name","type":"string"},{"name":"kind","type":"int"}]}}},{"name":"replica_id","type":"int"}]}"#;
 
-const CHANGE_EVENT_SCHEMA: LazyLock<Schema> = LazyLock::new(|| {
+static CHANGE_EVENT_SCHEMA: LazyLock<Schema> = LazyLock::new(|| {
     CHANGE_EVENT_SCHEMA_STR
         .parse()
         .expect("Failed to parse Avro schema")
 });
 
-const RELATION_SCHEMA: LazyLock<Schema> = LazyLock::new(|| {
+static RELATION_SCHEMA: LazyLock<Schema> = LazyLock::new(|| {
     RELATION_SCHEMA_STR
         .parse()
         .expect("Failed to parse Avro schema")
@@ -140,7 +153,7 @@ pub trait FieldAccess {
     fn get_kind(&self) -> FieldKind;
 }
 
-impl<'a> FieldAccess for Field {
+impl FieldAccess for Field {
     #[inline(always)]
     fn get_name(&self) -> &str {
         &self.name
@@ -189,11 +202,7 @@ impl PartialEq for FromAvroError {
     fn eq(&self, other: &Self) -> bool {
         use FromAvroError::*;
 
-        match (self, other) {
-            (NoEvents, NoEvents) => true,
-            (Avro(_), Avro(_)) => true,
-            _ => false,
-        }
+        matches!((self, other), (NoEvents, NoEvents) | (Avro(_), Avro(_)))
     }
 }
 
@@ -347,11 +356,11 @@ impl<'de: 'a, 'a> Deserialize<'de> for PgValue<'a> {
                         Ok(PgValue::Timestamp(value))
                     }
                     "Null" => {
-                        let _ = map.next_value::<()>()?;
+                        map.next_value::<()>()?;
                         Ok(PgValue::Null)
                     }
                     "Toasted" => {
-                        let _ = map.next_value::<()>()?;
+                        map.next_value::<()>()?;
                         Ok(PgValue::Toasted)
                     }
                     other => Err(serde::de::Error::custom(format!(

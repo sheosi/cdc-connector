@@ -16,7 +16,7 @@ use serde::Serialize;
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("Feldera api had an error {0}")]
-    Feldera(#[from] feldera_rest_api::Error<feldera_types::error::ErrorResponse>),
+    Feldera(#[from] Box<feldera_rest_api::Error<feldera_types::error::ErrorResponse>>),
 
     #[error("Serialization {0}")]
     Serialization(#[from] serde_json::Error),
@@ -164,7 +164,8 @@ impl FelderaConnector {
             .force(false)
             .body(json_str)
             .send()
-            .await?;
+            .await
+            .map_err(Box::new)?;
 
         Ok(())
     }
@@ -175,14 +176,14 @@ impl KafkaSink for FelderaConnector {
         mut event: ChangeEvent<'a>,
         _arena: &Bump,
     ) -> Result<(), SinkError> {
-        if let Err(()) = event.op.merge_toasted() {
+        if event.op.merge_toasted().is_err() {
             return Err(SinkError::ToastedInKeyOnly);
         }
 
         self.insert_batch(
             self.table_names
                 .get(event.rel)
-                .ok_or_else(|| SinkError::UnknownRelation(event.rel))?,
+                .ok_or(SinkError::UnknownRelation(event.rel))?,
             vec![event],
         )
         .await

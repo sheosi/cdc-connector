@@ -26,9 +26,9 @@ pub fn parse<'a>(
 
     let relation = relation_map
         .get(&relation_oid)
-        .ok_or_else(|| DecoderError::UnknownRelation(relation_oid))?;
+        .ok_or(DecoderError::UnknownRelation(relation_oid))?;
 
-    let (old, _) = get_old_tuple_data(&data[5..], &relation, arena)?;
+    let (old, _) = get_old_tuple_data(&data[5..], relation, arena)?;
 
     let event = ChangeEvent {
         op: Op::Delete { old },

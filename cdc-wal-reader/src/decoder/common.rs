@@ -19,7 +19,7 @@ pub fn get_old_tuple_data<'a>(
     relation: &'a RelationData,
     arena: &'a Bump,
 ) -> Result<(Vec<'a, PgValue<'a>>, usize), DecoderError> {
-    if data.len() == 0 {
+    if data.is_empty() {
         return Err(DecoderError::TruncatedInput);
     }
 
@@ -56,7 +56,7 @@ pub fn get_new_tuple_data<'a>(
     arena: &'a Bump,
     is_update: bool,
 ) -> Result<bumpalo::collections::Vec<'a, PgValue<'a>>, DecoderError> {
-    if data.len() == 0 {
+    if data.is_empty() {
         return Err(DecoderError::TruncatedInput);
     }
 
