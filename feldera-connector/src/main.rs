@@ -242,3 +242,26 @@ async fn main() {
         ))
         .await;
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn feldera_event_json_shape() {
+        let mut fields = HashMap::new();
+        fields.insert(16386, vec!["id".to_string(), "name".to_string()]);
+
+        let event = ChangeEvent {
+            op: Op::Insert {
+                row: vec![PgValue::Int4(1), PgValue::Text("Ada")],
+            },
+            rel: 16386,
+        };
+
+        let json =
+            FelderaEvent::to_lines(FelderaEvent::convert_op_batches(vec![event], &fields).unwrap())
+                .unwrap();
+        assert!(json.contains(r#"{"insert":{"id":1,"name":"Ada"}}"#));
+    }
+}
