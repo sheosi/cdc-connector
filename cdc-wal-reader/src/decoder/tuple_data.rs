@@ -309,7 +309,7 @@ mod test {
 
         let relation = &get_example_rel();
 
-        let tuple_data = parse(&data, &arena, &relation.fields, false);
+        let tuple_data = parse(&data, &arena, &relation.fields, true);
         let tuple_data_manual = vec![in &arena; PgValue::Toasted];
 
         assert_eq!(tuple_data, Ok((tuple_data_manual, 21)));
