@@ -6,8 +6,6 @@ members = [
     "cdc-sink",
     "cdc-wal-reader",
     "feldera-connector",
-    "integration-tests",
-    "integration-tests-macros",
     "postgres-connector",
 ]
 
